@@ -23,6 +23,10 @@ Et WordPress-plugin til tilgængelige guide-apps (PWA), fx **O&M-teknik** og **L
 
 ---
 
+## Prøv det uden at installere
+
+Åbn [WordPress Playground med IBOS Guides](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/rpaasch/ibos-guides/main/playground/blueprint.json). Det er en midlertidig WordPress i browseren med pluginet installeret. Den åbner på siden Importér. Intet gemmes, når fanen lukkes.
+
 ## Sådan redigerer du
 
 Alt foregår under menupunktet **Guides**.

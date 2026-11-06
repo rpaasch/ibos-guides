@@ -14,7 +14,7 @@
     { "step": "setSiteOptions", "options": { "blogname": "IBOS Guides – test", "permalink_structure": "/%postname%/" } },
     {
       "step": "installPlugin",
-      "pluginData": { "resource": "url", "url": "https://raw.githubusercontent.com/rpaasch/ibos-guides/claude/wizardly-cray-zt4cmk/ibos-guides.zip" },
+      "pluginData": { "resource": "url", "url": "https://raw.githubusercontent.com/rpaasch/ibos-guides/main/ibos-guides.zip" },
       "options": { "activate": true }
     }
   ]
