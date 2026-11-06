@@ -11,10 +11,10 @@ Et WordPress-plugin til tilgængelige guide-apps (PWA), fx **O&M-teknik** og **L
 ## Installation
 
 1. **Plugins → Tilføj nyt → Upload plugin**, vælg `ibos-guides.zip`, tryk **Installér nu** og derefter **Aktivér**.
-2. Gå til **Guides → Importér**, og tryk **Importér O&M-teknik** og/eller **Importér Ledsageteknik**.
+2. Gå til **Guides → Importér**. Skriv den ønskede adresse for hver guide (fx `guides/om-teknik` eller `o-og-m`), og tryk **Importér O&M-teknik** og/eller **Importér Ledsageteknik**. Adresser, som sitet allerede bruger, afvises.
    - Billederne hentes fra GitHub (`raw.githubusercontent.com`) og lægges i mediebiblioteket med deres alt-tekster.
    - O&M-teknik har 252 billeder og tager et par minutter. Lad siden være åben imens. Afbrydes importen, fortsætter den, hvor den slap, når du trykker igen.
-3. Appen ligger nu på fx `https://ibos.dk/om-teknik/` og `https://ibos.dk/ledsageteknik/`.
+3. Appen ligger nu på den valgte adresse, fx `https://ibos.dk/guides/om-teknik/`. Adressen kan ændres senere under App-indstillinger (brugere, der har installeret appen, skal så installere den igen).
 
 **Krav:**
 - HTTPS
@@ -33,7 +33,10 @@ Alt foregår under menupunktet **Guides**.
 | Side med guiden som forælder | **Et kapitel** i menuen | Ledsageteknik |
 | Side under et kapitel | **En indholdsside** | Grebet |
 
-- **Ny side:** Guides → Tilføj ny. Under **Sideattributter** til højre vælger du **Forælder** (kapitlet) og **Rækkefølge**. Lavt tal vises først, så brug spring af 10 (10, 20, 30 …), så der er plads til at indsætte sider imellem.
+- **Overblik:** **Guides → Oversigt** viser hver guide som et træ med kapitler og sider. Herfra kan du redigere, se siden i appen, flytte op/ned og oprette nye kapitler og sider direkte på det rigtige sted.
+- **Ny side:** Guides → Oversigt → **+ Ny side i kapitlet**. Siden lægges automatisk sidst i kapitlet. Du kan også bruge Guides → Ny guide og så vælge **Overordnet** øverst i panelet til højre (kapitlet for en side, guiden for et kapitel).
+- **Rækkefølge:** brug **Flyt op/ned** i Oversigt. Flyttes en side til et andet kapitel via Overordnet, lægges den sidst dér.
+- **Kapitler er sider:** et kapitel er selv en side. Den vises som menupunkt med sine undersider og kan have en kort intro-tekst.
 - **Tekst:** skriv i blok-editoren. Brug **Overskrift H2** og nedefter. Sidens titel er allerede overskrift 1.
 - **Billeder:** brug billedblokken, og udfyld **Alternativ tekst**. Er billedet kun pynt, så giv blokken CSS-klassen `dekorativ` (Avanceret → Ekstra CSS-klasse) og lad alt-teksten være tom.
 - **Kort beskrivelse i menuen:** udfyld **Uddrag** (excerpt).
@@ -42,14 +45,21 @@ Alt foregår under menupunktet **Guides**.
 - **Tilgængelighedstjek:** boksen af samme navn og kolonnen **Tjek** i listen viser fx manglende alt-tekster og spring i overskriftsniveauer.
 
 ### App-indstillinger
-De findes på guidens øverste side, i boksen **App-indstillinger** under editoren (åbn "Meta Boxes" nederst):
+Findes på guidens øverste side i boksen **App-indstillinger** i panelet til højre i editoren (under Placering). Guidens **titel** er appens navn, og teksten i editoren er appens forside.
 
-- adresse
-- kort navn under ikonet
-- temafarve (kontrasten tjekkes)
-- app-ikon og eventuelt logo
-- udgiver og kolofon
-- menuvisning (felter eller liste)
+| Indstilling | Forklaring |
+|---|---|
+| **Dette er en guide** | Sæt flueben, når siden skal være forsiden i en app, som borgere kan åbne og lægge på hjemmeskærmen. Siderne under den bliver appens kapitler og sider. Uden flueben er siden ikke en app og vises ingen steder. |
+| **Adresse** | Webadressen, som borgerne åbner – og som QR-koden på "Installér appen" peger på, fx `guides/om-teknik` → `ibos.dk/guides/om-teknik/`. Små bogstaver, tal og bindestreg; skråstreg samler flere guides. Vælg med omhu: ændres adressen senere, forsvinder appen fra borgernes hjemmeskærm, og de skal installere den igen. Adresser, som hjemmesiden allerede bruger, afvises. |
+| **Kort navn** | Teksten under app-ikonet på hjemmeskærmen. Telefonen forkorter lange navne, så højst ca. 12 tegn, fx "O&M-teknik". Tomt felt = guidens titel. |
+| **Temafarve** | Farven på bjælken øverst i appen og på telefonens statuslinje. Teksten i bjælken er hvid, så farven skal være mørk nok til, at svagsynede kan læse den (kontrast mindst 4,5:1 – vises under feltet). IBOS-farver: `#00656c` (petrol) og `#00628b` (blå). |
+| **App-ikon** | Billedet på hjemmeskærmen. Kvadratisk, mindst 512 × 512 pixels, enkelt motiv uden tekst. Hold motivet inde i midten – Android klipper hjørnerne af og kan vise ikonet som en cirkel. Baggrunden får temafarven. Uden valg bruges et standardikon. |
+| **Logo** (valgfrit) | Lille logo, fx IBOS-logoet, foran appens navn i bjælken. Brug en hvid/lys udgave. Det er pynt – skærmlæsere læser appens navn. |
+| **Udgiver** | Står nederst på alle sider, fx "Udgivet af IBOS – Instituttet for Blinde og Svagsynede". |
+| **Kolofon** | Valgfri ekstra linje nederst, fx forfatter eller hvornår indholdet sidst er gennemgået. |
+| **Menuvisning** | Hvordan kapitler og sider vises på forsiden og kapitelsiderne: **Felter** (store, lette at ramme på telefon) eller **Liste** (enkel, god ved mange punkter). Skærmlæsere læser begge ens. Den enkelte side kan vælge anderledes under "Visning". |
+
+**Uddrag** (panelet til højre) er guidens korte beskrivelse; den bruges, når appen installeres, og i søgemaskiner.
 
 ### En ny guide
 Opret en ny side **uden forælder**, sæt flueben ved **Dette er en guide**, udfyld app-indstillingerne, og udgiv. Opret derefter kapitler og sider under den.

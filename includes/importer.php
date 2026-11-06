@@ -50,7 +50,7 @@ function ibos_guides_imported( $key ) {
 
 add_action( 'admin_menu', 'ibos_guides_import_menu' );
 function ibos_guides_import_menu() {
-	add_submenu_page( 'edit.php?post_type=' . IBOS_GUIDES_CPT, __( 'Importér guide', 'ibos-guides' ), __( 'Importér', 'ibos-guides' ), 'publish_pages', 'ibos-guides-import', 'ibos_guides_import_page' );
+	add_submenu_page( 'ibos-guides', __( 'Importér guide', 'ibos-guides' ), __( 'Importér', 'ibos-guides' ), 'publish_pages', 'ibos-guides-import', 'ibos_guides_import_page' );
 }
 
 function ibos_guides_import_page() {
@@ -71,7 +71,7 @@ function ibos_guides_import_page() {
 			<tbody>
 			<?php foreach ( $packages as $key => $pkg ) : $existing = ibos_guides_imported( $key ); ?>
 				<tr>
-					<th scope="row"><strong><?php echo esc_html( $pkg['guide']['title'] ); ?></strong><br><code>/<?php echo esc_html( $pkg['guide']['slug'] ); ?>/</code></th>
+					<th scope="row"><strong><?php echo esc_html( $pkg['guide']['title'] ); ?></strong></th>
 					<td>
 					<?php
 					/* translators: 1: sider, 2: billeder */
@@ -84,6 +84,13 @@ function ibos_guides_import_page() {
 							<a href="<?php echo esc_url( get_permalink( $existing ) ); ?>"><?php esc_html_e( 'Åbn appen', 'ibos-guides' ); ?></a>
 							<p class="description"><?php esc_html_e( 'Flyt den eksisterende guide til papirkurven og tøm den, hvis du vil importere igen.', 'ibos-guides' ); ?></p>
 						<?php else : ?>
+							<?php if ( ! $existing ) : ?>
+								<p>
+									<label for="ibg-slug-<?php echo esc_attr( $key ); ?>"><?php esc_html_e( 'Adresse', 'ibos-guides' ); ?></label><br>
+									<code><?php echo esc_html( home_url( '/' ) ); ?></code><input type="text" class="regular-text ibg-import-slug" id="ibg-slug-<?php echo esc_attr( $key ); ?>" value="<?php echo esc_attr( $pkg['guide']['slug'] ); ?>" aria-describedby="ibg-slug-help-<?php echo esc_attr( $key ); ?>" style="width:14em"><code>/</code>
+								</p>
+								<p class="description" id="ibg-slug-help-<?php echo esc_attr( $key ); ?>"><?php esc_html_e( 'Vælg selv adressen, fx "guides/om-teknik" eller "o-og-m". Små bogstaver, tal, bindestreg og skråstreg. Adresser, som sitet allerede bruger, afvises. Tip: åbn adressen i browseren først – viser den noget, så vælg en anden. Kan ændres senere under App-indstillinger.', 'ibos-guides' ); ?></p>
+							<?php endif; ?>
 							<button type="button" class="button button-primary ibg-import" data-key="<?php echo esc_attr( $key ); ?>">
 								<?php
 								/* translators: %s: guidens navn */
@@ -115,6 +122,8 @@ function ibos_guides_import_page() {
 			var body = new FormData();
 			body.append( 'action', 'ibos_guides_import' );
 			body.append( 'key', key );
+			var slugField = document.getElementById( 'ibg-slug-' + key );
+			if ( slugField ) { body.append( 'slug', slugField.value ); }
 			body.append( '_ajax_nonce', nonce );
 			fetch( ajaxurl, { method: 'POST', body: body, credentials: 'same-origin' } )
 				.then( function ( r ) { return r.json(); } )
@@ -170,8 +179,21 @@ function ibos_guides_import_ajax() {
 		}
 		update_option( $lock, time(), false ); // Forældet lås efter et nedbrud.
 	}
+	$pkg = $packages[ $key ];
+	// Selvvalgt adresse: tjekkes, før der oprettes noget (kun ved første skridt).
+	if ( ! $existing ) {
+		$slug = ibos_guides_clean_slug( sanitize_text_field( ibos_guides_post_str( 'slug' ) ) );
+		if ( '' !== $slug ) {
+			$problem = ibos_guides_slug_problem( $slug, 0 );
+			if ( $problem ) {
+				delete_option( $lock );
+				wp_send_json_error( array( 'message' => $problem ) );
+			}
+			$pkg['guide']['slug'] = $slug;
+		}
+	}
 	try {
-		$result = ibos_guides_import_step( $packages[ $key ] );
+		$result = ibos_guides_import_step( $pkg );
 		delete_option( $lock );
 		wp_send_json_success( $result );
 	} catch ( Throwable $e ) {
@@ -209,7 +231,7 @@ function ibos_guides_import_step( $pkg ) {
 					'post_type'    => IBOS_GUIDES_CPT,
 					'post_status'  => 'draft',
 					'post_title'   => wp_slash( $g['title'] ),
-					'post_name'    => $g['slug'],
+					'post_name'    => sanitize_title( basename( $g['slug'] ) ),
 					'post_excerpt' => wp_slash( $g['excerpt'] ),
 					'post_content' => wp_slash( $g['content'] ),
 					'meta_input'   => array(

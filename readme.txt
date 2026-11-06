@@ -4,7 +4,7 @@ Tags: pwa, offline, accessibility, guide, app
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.1.0
+Stable tag: 1.1.1
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -57,6 +57,13 @@ Gå til Indstillinger → Permalinks og tryk "Gem ændringer". Permalinks må ik
 Giv billedblokken CSS-klassen `dekorativ` (Avanceret → Ekstra CSS-klasse) og lad alt-teksten være tom.
 
 == Changelog ==
+
+= 1.1.1 =
+* Selvvalgt adresse ved import (tjekkes mod sitets eksisterende adresser).
+* Adresser, som WordPress sender videre fra en sides tidligere adresse, kan ikke bruges.
+* Ny menu "Guides" med en Oversigt: hver guide som træ med Redigér, Vis, Flyt op/ned og "+ Ny side i kapitlet".
+* Placering bruger WordPress' normale "Overordnet". Boksen "Placering" viser, hvor siden ligger. Flyttes en side til et andet kapitel, lægges den sidst dér.
+* App-indstillinger flyttet op i sidepanelet med bedre forklaringer.
 
 = 1.1.0 =
 * Sikkerhed: resultatet af en omfattende sikkerhedsgennemgang (se README). Bl.a. lukket læk af ikke-offentligt indhold via REST og cache, apps fjernes fra telefoner, når en guide ikke længere er offentlig, fastlåst og kontrolleret import, beskyttelse mod overbelastning.
