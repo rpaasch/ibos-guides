@@ -1,0 +1,428 @@
+<?php
+/**
+ * HTML-skabeloner, manifest, søgeindeks og service worker.
+ *
+ * @package IbosGuides
+ */
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * URL til en fil i pluginets assets-mappe (med version, så cache brydes ved opdatering).
+ *
+ * @param string $file Filnavn.
+ * @return string
+ */
+function ibos_guides_asset( $file ) {
+	return plugins_url( 'assets/' . $file, IBOS_GUIDES_FILE ) . '?ver=' . rawurlencode( IBOS_GUIDES_VERSION );
+}
+
+/**
+ * Renderet indhold af en side (blokke → HTML).
+ *
+ * @param WP_Post $post Side.
+ * @return string
+ */
+function ibos_guides_content( $post ) {
+	static $cache = array();
+	if ( isset( $cache[ $post->ID ] ) ) {
+		return $cache[ $post->ID ];
+	}
+	$prev            = isset( $GLOBALS['post'] ) ? $GLOBALS['post'] : null;
+	$GLOBALS['post'] = $post; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+	setup_postdata( $post );
+	$html = apply_filters( 'the_content', $post->post_content ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
+	// Overskrift 1 hører kun til sidens titel.
+	$html            = preg_replace( '#<(/?)h1(\s|>)#i', '<$1h2$2', $html );
+	$GLOBALS['post'] = $prev; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
+	if ( $prev ) {
+		setup_postdata( $prev );
+	}
+	$cache[ $post->ID ] = $html;
+	return $html;
+}
+
+/**
+ * Menutitel (kortere titel kan sættes i meta _ibg_menu_title).
+ *
+ * @param WP_Post $p Side.
+ * @return string
+ */
+function ibos_guides_menu_title( $p ) {
+	$m = get_post_meta( $p->ID, '_ibg_menu_title', true );
+	return $m ? $m : get_the_title( $p );
+}
+
+/**
+ * Fælles sideramme.
+ *
+ * @param WP_Post $guide Rod-side.
+ * @param array   $a     title, description, breadcrumbs, body, pager, is_home, body_class.
+ * @return string
+ */
+function ibos_guides_layout( $guide, $a ) {
+	$s     = ibos_guides_settings( $guide );
+	$base  = ibos_guides_base_url( $guide );
+	$name  = get_the_title( $guide );
+	$logo  = $s['logo_id'] ? wp_get_attachment_image( $s['logo_id'], 'medium', false, array( 'class' => 'brand-logo', 'alt' => '' ) ) : '';
+	$dev   = defined( 'WP_DEBUG' ) && WP_DEBUG && isset( $_GET['ibg-nosw'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+	ob_start();
+	?>
+<!doctype html>
+<html lang="da">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title><?php echo esc_html( $a['title'] ); ?></title>
+<?php if ( ! empty( $a['description'] ) ) : ?>
+<meta name="description" content="<?php echo esc_attr( $a['description'] ); ?>">
+<?php endif; ?>
+<meta name="theme-color" content="<?php echo esc_attr( $s['color'] ); ?>">
+<meta name="color-scheme" content="light dark">
+<link rel="manifest" href="<?php echo esc_url( $base . 'manifest.webmanifest' ); ?>">
+<link rel="icon" href="<?php echo esc_url( $base . 'icons/favicon-32.png' ); ?>" sizes="32x32" type="image/png">
+<link rel="apple-touch-icon" href="<?php echo esc_url( $base . 'icons/apple-touch-icon.png' ); ?>">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="<?php echo esc_attr( $s['short_name'] ); ?>">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="format-detection" content="telephone=no">
+<link rel="stylesheet" href="<?php echo esc_url( ibos_guides_asset( 'app.css' ) ); ?>">
+<style>:root{--theme:<?php echo esc_html( $s['color'] ); ?>;}</style>
+<script src="<?php echo esc_url( ibos_guides_asset( 'qrcode.js' ) ); ?>" defer></script>
+<script src="<?php echo esc_url( ibos_guides_asset( 'app.js' ) ); ?>" defer></script>
+</head>
+<body data-base="<?php echo esc_url( $base ); ?>"<?php echo $dev ? ' data-nosw="1"' : ''; ?> class="<?php echo esc_attr( isset( $a['body_class'] ) ? $a['body_class'] : '' ); ?>">
+<a class="skip-link" href="#indhold"><?php esc_html_e( 'Spring til indhold', 'ibos-guides' ); ?></a>
+<header class="site-header">
+	<div class="wrap header-inner">
+		<p class="brand">
+		<?php if ( ! empty( $a['is_home'] ) ) : ?>
+			<a href="<?php echo esc_url( $base ); ?>" aria-current="page"><?php echo $logo; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?><span><?php echo esc_html( $name ); ?></span></a>
+		<?php else : ?>
+			<a href="<?php echo esc_url( $base ); ?>"><?php echo $logo; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped ?><span><?php echo esc_html( $name ); ?></span><span class="visually-hidden">, <?php esc_html_e( 'forside', 'ibos-guides' ); ?></span></a>
+		<?php endif; ?>
+		</p>
+		<nav class="shortcuts" aria-label="<?php esc_attr_e( 'Genveje', 'ibos-guides' ); ?>">
+			<ul>
+				<li><a href="<?php echo esc_url( $base . 'soeg/' ); ?>"><?php esc_html_e( 'Søg', 'ibos-guides' ); ?></a></li>
+				<li><a href="<?php echo esc_url( $base . 'installer/' ); ?>"><?php esc_html_e( 'Installér appen', 'ibos-guides' ); ?></a></li>
+			</ul>
+		</nav>
+	</div>
+</header>
+<?php echo isset( $a['breadcrumbs'] ) ? $a['breadcrumbs'] : ''; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escapet ved opbygning. ?>
+<main id="indhold" tabindex="-1">
+	<div class="wrap">
+<?php echo $a['body']; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escapet ved opbygning. ?>
+	</div>
+</main>
+<?php echo isset( $a['pager'] ) ? $a['pager'] : ''; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escapet ved opbygning. ?>
+<footer class="site-footer">
+	<div class="wrap">
+		<?php if ( $s['colophon'] ) : ?><p><?php echo esc_html( $s['colophon'] ); ?></p><?php endif; ?>
+		<?php if ( $s['publisher'] ) : ?><p><?php echo esc_html( $s['publisher'] ); ?></p><?php endif; ?>
+	</div>
+</footer>
+<div class="toast" id="app-status" role="status" aria-live="polite"></div>
+</body>
+</html>
+	<?php
+	return ob_get_clean();
+}
+
+/**
+ * Brødkrummer med "Tilbage"-link.
+ *
+ * @param array $trail [ [title, url], … ] fra forside til aktuel side.
+ * @return string
+ */
+function ibos_guides_breadcrumbs( $trail ) {
+	if ( count( $trail ) < 2 ) {
+		return '';
+	}
+	$parent = $trail[ count( $trail ) - 2 ];
+	$items  = '';
+	foreach ( $trail as $i => $t ) {
+		$items .= ( count( $trail ) - 1 === $i )
+			? '<li><a href="' . esc_url( $t[1] ) . '" aria-current="page">' . esc_html( $t[0] ) . '</a></li>'
+			: '<li><a href="' . esc_url( $t[1] ) . '">' . esc_html( $t[0] ) . '</a></li>';
+	}
+	return '<nav class="breadcrumbs" aria-label="' . esc_attr__( 'Brødkrummer', 'ibos-guides' ) . '"><div class="wrap">'
+		. '<a class="back-link" href="' . esc_url( $parent[1] ) . '"><span aria-hidden="true">‹ </span>' . esc_html__( 'Tilbage', 'ibos-guides' ) . '<span class="visually-hidden"> ' . esc_html__( 'til', 'ibos-guides' ) . ' ' . esc_html( $parent[0] ) . '</span></a>'
+		. '<ol>' . $items . '</ol></div></nav>';
+}
+
+/**
+ * Renderer en indholdsside, et kapitel eller forsiden.
+ *
+ * @param WP_Post $guide Rod-side.
+ * @param int     $id    Side-id.
+ * @return string
+ */
+function ibos_guides_render_page( $guide, $id ) {
+	$s       = ibos_guides_settings( $guide );
+	$base    = ibos_guides_base_url( $guide );
+	$tree    = ibos_guides_tree( $guide->ID );
+	$post    = $tree['posts'][ $id ];
+	$is_home = (int) $id === (int) $guide->ID;
+	$url     = function ( $pid ) use ( $base, $guide ) {
+		return $base . ibos_guides_path( $pid, $guide->ID );
+	};
+
+	// Titel: "Side – Kapitel – App".
+	$parts = array();
+	if ( ! $is_home ) {
+		$parts[] = get_the_title( $post );
+		if ( (int) $post->post_parent !== (int) $guide->ID ) {
+			$parts[] = get_the_title( $post->post_parent );
+		}
+	}
+	$parts[] = get_the_title( $guide );
+
+	// Brødkrummer.
+	$trail = array();
+	for ( $p = $post; $p; $p = $p->post_parent ? get_post( $p->post_parent ) : null ) {
+		array_unshift( $trail, array( (int) $p->ID === (int) $guide->ID ? __( 'Forside', 'ibos-guides' ) : ibos_guides_menu_title( $p ), $url( $p->ID ) ) );
+		if ( (int) $p->ID === (int) $guide->ID ) {
+			break;
+		}
+	}
+
+	// Undermenu.
+	$children = array();
+	foreach ( isset( $tree['children'][ $id ] ) ? $tree['children'][ $id ] : array() as $c ) {
+		if ( ! ibos_guides_is_hidden( $c ) ) {
+			$children[] = $tree['posts'][ $c ];
+		}
+	}
+	$menu = '';
+	if ( $children ) {
+		$style = get_post_meta( $id, '_ibg_child_menu', true );
+		$style = $style ? $style : $s['menu'];
+		$label = $is_home ? __( 'Indhold', 'ibos-guides' ) : sprintf( /* translators: %s: kapitel */ __( 'Sider i %s', 'ibos-guides' ), get_the_title( $post ) );
+		$menu .= '<section class="child-menu" aria-labelledby="menu-overskrift"><h2 id="menu-overskrift">' . esc_html( $label ) . '</h2>';
+		$menu .= '<nav aria-labelledby="menu-overskrift"><ul class="menu menu--' . ( 'list' === $style ? 'list' : 'tiles' ) . '">';
+		foreach ( $children as $c ) {
+			$menu .= '<li><a href="' . esc_url( $url( $c->ID ) ) . '">' . esc_html( ibos_guides_menu_title( $c ) ) . '</a>';
+			if ( has_excerpt( $c ) ) {
+				$menu .= '<p>' . esc_html( get_the_excerpt( $c ) ) . '</p>';
+			}
+			$menu .= '</li>';
+		}
+		$menu .= '</ul></nav></section>';
+	}
+
+	// Forrige/næste.
+	$order = ibos_guides_order( $guide->ID );
+	$i     = array_search( (int) $id, $order, true );
+	$pager = '';
+	if ( false !== $i ) {
+		$prev  = $i > 0 ? $order[ $i - 1 ] : 0;
+		$next  = isset( $order[ $i + 1 ] ) ? $order[ $i + 1 ] : 0;
+		$pager = '<nav class="pager" aria-label="' . esc_attr__( 'Forrige og næste side', 'ibos-guides' ) . '"><div class="wrap"><ul>';
+		if ( $prev ) {
+			$pager .= '<li class="pager-prev"><a href="' . esc_url( $url( $prev ) ) . '" rel="prev"><span class="pager-label">' . esc_html__( 'Forrige', 'ibos-guides' ) . '<span class="visually-hidden"> ' . esc_html__( 'side', 'ibos-guides' ) . '</span>:</span> <span class="pager-title">' . esc_html( $prev === (int) $guide->ID ? __( 'Forside', 'ibos-guides' ) : ibos_guides_menu_title( $tree['posts'][ $prev ] ) ) . '</span></a></li>';
+		}
+		if ( $next ) {
+			$pager .= '<li class="pager-next"><a href="' . esc_url( $url( $next ) ) . '" rel="next"><span class="pager-label">' . esc_html__( 'Næste', 'ibos-guides' ) . '<span class="visually-hidden"> ' . esc_html__( 'side', 'ibos-guides' ) . '</span>:</span> <span class="pager-title">' . esc_html( ibos_guides_menu_title( $tree['posts'][ $next ] ) ) . '</span></a></li>';
+		}
+		$pager .= '</ul></div></nav>';
+	}
+
+	$body = '<h1>' . esc_html( get_the_title( $post ) ) . '</h1>' . "\n" . ibos_guides_content( $post ) . "\n" . $menu;
+	return ibos_guides_layout(
+		$guide,
+		array(
+			'title'       => implode( ' – ', $parts ),
+			'description' => has_excerpt( $post ) ? get_the_excerpt( $post ) : '',
+			'breadcrumbs' => ibos_guides_breadcrumbs( $trail ),
+			'body'        => $body,
+			'pager'       => $pager,
+			'is_home'     => $is_home,
+		)
+	);
+}
+
+/**
+ * Renderer søgesiden eller installationssiden.
+ *
+ * @param WP_Post $guide Rod-side.
+ * @param string  $which search|install.
+ * @return string
+ */
+function ibos_guides_render_special( $guide, $which ) {
+	$base  = ibos_guides_base_url( $guide );
+	$s     = ibos_guides_settings( $guide );
+	$name  = get_the_title( $guide );
+	$title = 'search' === $which ? __( 'Søg', 'ibos-guides' ) : __( 'Installér appen', 'ibos-guides' );
+	$url   = $base . ( 'search' === $which ? 'soeg/' : 'installer/' );
+
+	if ( 'search' === $which ) {
+		$body = '<h1>' . esc_html( $title ) . '</h1>
+<form class="search-form" role="search" action="' . esc_url( $url ) . '" method="get" id="search-form" hidden>
+  <label for="q">' . esc_html__( 'Søg i titler og tekst', 'ibos-guides' ) . '</label>
+  <div class="search-row">
+    <input id="q" name="q" type="search" autocomplete="off" autocapitalize="off" enterkeyhint="search" aria-describedby="search-hint">
+    <button type="submit">' . esc_html__( 'Søg', 'ibos-guides' ) . '</button>
+  </div>
+  <p id="search-hint" class="hint">' . esc_html__( 'Resultaterne vises, mens du skriver. Søgningen virker også uden internet.', 'ibos-guides' ) . '</p>
+</form>
+<p class="search-status" id="search-status" role="status" aria-live="polite" aria-atomic="true"></p>
+<div id="search-results-wrap" hidden>
+  <h2 id="search-results-heading">' . esc_html__( 'Resultater', 'ibos-guides' ) . '</h2>
+  <ol class="search-results" id="search-results" aria-labelledby="search-results-heading"></ol>
+</div>
+<noscript><p>' . esc_html__( 'Søgningen kræver JavaScript. Du kan finde alle sider via menuen på', 'ibos-guides' ) . ' <a href="' . esc_url( $base ) . '">' . esc_html__( 'forsiden', 'ibos-guides' ) . '</a>.</p></noscript>';
+	} else {
+		$n    = esc_html( $name );
+		$body = '<h1>' . esc_html( $title ) . '</h1>
+<p>' . sprintf( /* translators: %s: appens navn */ esc_html__( 'Læg %s på hjemmeskærmen, så den åbner som en app. Når appen har været åbnet én gang med internet, virker alt indhold også uden net.', 'ibos-guides' ), $n ) . '</p>
+<div class="install-box" id="install-box">
+  <p id="install-status" role="status" aria-live="polite"></p>
+  <button type="button" class="button" id="install-button" hidden>' . sprintf( /* translators: %s: appens navn */ esc_html__( 'Installér %s', 'ibos-guides' ), $n ) . '</button>
+</div>
+<section id="share" class="share" aria-labelledby="share-heading" hidden>
+  <h2 id="share-heading">' . esc_html__( 'Del appen med en borger', 'ibos-guides' ) . '</h2>
+  <p>' . esc_html__( 'Lad borgeren scanne QR-koden med kameraet på sin telefon. Den åbner appens adresse, og derefter følges vejledningen nedenfor.', 'ibos-guides' ) . '</p>
+  <div class="qr" id="qr"></div>
+  <p>' . esc_html__( 'Adresse:', 'ibos-guides' ) . ' <span class="app-url" id="app-url"></span></p>
+  <button type="button" class="button button--secondary" id="copy-url">' . esc_html__( 'Kopiér adressen', 'ibos-guides' ) . '</button>
+</section>
+<h2 id="iphone">' . esc_html__( 'iPhone og iPad', 'ibos-guides' ) . '</h2>
+<ol class="steps">
+  <li>' . wp_kses( __( 'Tryk på <strong>Del</strong>. Kan du ikke se den, så tryk først på <strong>Flere</strong> (tre prikker).', 'ibos-guides' ), array( 'strong' => array() ) ) . '</li>
+  <li>' . wp_kses( __( 'Vælg <strong>Føj til hjemmeskærm</strong>.', 'ibos-guides' ), array( 'strong' => array() ) ) . '</li>
+  <li>' . wp_kses( __( 'Tryk på <strong>Tilføj</strong>.', 'ibos-guides' ), array( 'strong' => array() ) ) . '</li>
+</ol>
+<p class="hint">' . esc_html__( 'Virker i Safari. Del-knappen sidder nederst på iPhone og øverst på iPad. Ligger Føj til hjemmeskærm ikke i listen, så rul ned, eller vælg Vis flere.', 'ibos-guides' ) . '</p>
+<h2 id="android">' . esc_html__( 'Android', 'ibos-guides' ) . '</h2>
+<ol class="steps">
+  <li>' . sprintf( /* translators: %s: appens navn */ wp_kses( __( 'Tryk på knappen <strong>Installér %s</strong> ovenfor, hvis den vises.', 'ibos-guides' ), array( 'strong' => array() ) ), $n ) . '</li>
+  <li>' . wp_kses( __( 'Ellers: åbn Chromes menu (tre prikker), og vælg <strong>Installér app</strong> eller <strong>Føj til startskærm</strong>.', 'ibos-guides' ), array( 'strong' => array() ) ) . '</li>
+</ol>
+<h2 id="computer">' . esc_html__( 'Computer', 'ibos-guides' ) . '</h2>
+<ol class="steps">
+  <li>' . wp_kses( __( 'I Chrome eller Edge: brug knappen ovenfor eller installationsikonet i adresselinjen.', 'ibos-guides' ), array() ) . '</li>
+  <li>' . wp_kses( __( 'På Mac med Safari: vælg <strong>Arkiv → Føj til Dock</strong>.', 'ibos-guides' ), array( 'strong' => array() ) ) . '</li>
+</ol>';
+	}
+
+	return ibos_guides_layout(
+		$guide,
+		array(
+			'title'       => $title . ' – ' . $name,
+			'breadcrumbs' => ibos_guides_breadcrumbs( array( array( __( 'Forside', 'ibos-guides' ), $base ), array( $title, $url ) ) ),
+			'body'        => $body,
+			'body_class'  => 'page-' . $which,
+		)
+	);
+}
+
+/**
+ * Web app-manifest.
+ *
+ * @param WP_Post $guide Rod-side.
+ * @return array
+ */
+function ibos_guides_manifest( $guide ) {
+	$s    = ibos_guides_settings( $guide );
+	$base = ibos_guides_base_url( $guide );
+	return array(
+		'name'             => get_the_title( $guide ),
+		'short_name'       => $s['short_name'],
+		'description'      => has_excerpt( $guide ) ? get_the_excerpt( $guide ) : '',
+		'lang'             => 'da',
+		'dir'              => 'ltr',
+		'id'               => $base,
+		'start_url'        => $base,
+		'scope'            => $base,
+		'display'          => 'standalone',
+		'background_color' => '#ffffff',
+		'theme_color'      => $s['color'],
+		'icons'            => array(
+			array( 'src' => $base . 'icons/icon-192.png', 'sizes' => '192x192', 'type' => 'image/png', 'purpose' => 'any' ),
+			array( 'src' => $base . 'icons/icon-512.png', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'any' ),
+			array( 'src' => $base . 'icons/icon-maskable-512.png', 'sizes' => '512x512', 'type' => 'image/png', 'purpose' => 'maskable' ),
+		),
+	);
+}
+
+/**
+ * Søgeindeks og liste over billeder – caches pr. version.
+ *
+ * @param WP_Post $guide Rod-side.
+ * @return array{index: array, images: string[]}
+ */
+function ibos_guides_collect( $guide ) {
+	$key  = 'ibg_collect_' . $guide->ID;
+	$data = get_transient( $key );
+	if ( is_array( $data ) && isset( $data['v'] ) && ibos_guides_version( $guide ) === $data['v'] ) {
+		return $data;
+	}
+	$tree   = ibos_guides_tree( $guide->ID );
+	$index  = array();
+	$images = array();
+	$home   = wp_parse_url( home_url(), PHP_URL_HOST );
+	foreach ( array_keys( $tree['posts'] ) as $id ) {
+		$p    = $tree['posts'][ $id ];
+		$html = ibos_guides_content( $p );
+		if ( preg_match_all( '/<img\b[^>]*\bsrc="([^"]+)"/i', $html, $m ) ) {
+			foreach ( $m[1] as $src ) {
+				$src = html_entity_decode( $src );
+				if ( wp_parse_url( $src, PHP_URL_HOST ) === $home ) {
+					$images[ $src ] = true;
+				}
+			}
+		}
+		if ( ibos_guides_is_hidden( $id ) ) {
+			continue;
+		}
+		$index[] = array(
+			't' => get_the_title( $p ),
+			's' => ( (int) $p->post_parent && (int) $p->post_parent !== (int) $guide->ID ) ? get_the_title( $p->post_parent ) : '',
+			'u' => ibos_guides_path( $id, $guide->ID ),
+			'x' => trim( preg_replace( '/\s+/u', ' ', html_entity_decode( wp_strip_all_tags( $html ), ENT_QUOTES, 'UTF-8' ) ) ),
+		);
+	}
+	$data = array(
+		'v'      => ibos_guides_version( $guide ),
+		'index'  => $index,
+		'images' => array_keys( $images ),
+	);
+	set_transient( $key, $data, DAY_IN_SECONDS );
+	return $data;
+}
+
+function ibos_guides_search_index( $guide ) {
+	return ibos_guides_collect( $guide )['index'];
+}
+
+/**
+ * Service worker med versioneret precache.
+ *
+ * @param WP_Post $guide Rod-side.
+ * @return string
+ */
+function ibos_guides_service_worker( $guide ) {
+	$base     = ibos_guides_base_url( $guide );
+	$data     = ibos_guides_collect( $guide );
+	$precache = array( $base, $base . 'soeg/', $base . 'installer/', $base . 'manifest.webmanifest', $base . 'search-index.json' );
+	foreach ( ibos_guides_order( $guide->ID ) as $id ) {
+		$precache[] = $base . ibos_guides_path( $id, $guide->ID );
+	}
+	foreach ( array( 'icon-192', 'icon-512', 'icon-maskable-512', 'apple-touch-icon', 'favicon-32' ) as $i ) {
+		$precache[] = $base . 'icons/' . $i . '.png';
+	}
+	foreach ( array( 'app.css', 'app.js', 'qrcode.js' ) as $f ) {
+		$precache[] = ibos_guides_asset( $f );
+	}
+	$precache = array_values( array_unique( array_merge( $precache, $data['images'] ) ) );
+	$version  = ibos_guides_version( $guide ) . '-' . substr( md5( implode( '|', $precache ) . ibos_guides_settings( $guide )['color'] ), 0, 8 );
+	$tpl      = file_get_contents( IBOS_GUIDES_DIR . '/assets/sw.js' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+	return str_replace(
+		array( '__VERSION__', '__PRECACHE__' ),
+		array( esc_js( $version ), wp_json_encode( $precache, JSON_UNESCAPED_SLASHES ) ),
+		$tpl
+	);
+}

@@ -1,0 +1,63 @@
+<?php
+/**
+ * App-ikoner: genereres fra guidens valgte billede med GD og gemmes i uploads.
+ * Uden valgt billede (eller uden GD) bruges pluginets standardikoner.
+ *
+ * @package IbosGuides
+ */
+
+defined( 'ABSPATH' ) || exit;
+
+/**
+ * Sti til en ikonfil.
+ *
+ * @param WP_Post $guide Rod-side.
+ * @param string  $name  icon-192|icon-512|icon-maskable-512|apple-touch-icon|favicon-32.
+ * @return string|false
+ */
+function ibos_guides_icon_file( $guide, $name ) {
+	$sizes = array(
+		'icon-192'          => array( 192, 0 ),
+		'icon-512'          => array( 512, 0 ),
+		'icon-maskable-512' => array( 512, 0.1 ), // 10 % margin: motivet skal ligge i den sikre zone.
+		'apple-touch-icon'  => array( 180, 0 ),
+		'favicon-32'        => array( 32, 0 ),
+	);
+	if ( ! isset( $sizes[ $name ] ) ) {
+		return false;
+	}
+	$default = IBOS_GUIDES_DIR . '/assets/icons/' . $name . '.png';
+	$s       = ibos_guides_settings( $guide );
+	$src     = $s['icon_id'] ? get_attached_file( $s['icon_id'] ) : '';
+	if ( ! $src || ! is_readable( $src ) || ! function_exists( 'imagecreatefromstring' ) ) {
+		return $default;
+	}
+	$up  = wp_upload_dir();
+	$dir = trailingslashit( $up['basedir'] ) . 'ibos-guides';
+	$out = $dir . '/' . (int) $guide->ID . '-' . (int) $s['icon_id'] . '-' . substr( md5( $s['color'] . filemtime( $src ) ), 0, 8 ) . '-' . $name . '.png';
+	if ( is_readable( $out ) ) {
+		return $out;
+	}
+	wp_mkdir_p( $dir );
+	$img = @imagecreatefromstring( (string) file_get_contents( $src ) ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
+	if ( ! $img ) {
+		return $default;
+	}
+	list( $size, $pad ) = $sizes[ $name ];
+	$canvas = imagecreatetruecolor( $size, $size );
+	// Baggrund i temafarven (iOS viser ikke gennemsigtighed).
+	list( $r, $g, $b ) = sscanf( $s['color'], '#%02x%02x%02x' );
+	imagefill( $canvas, 0, 0, imagecolorallocate( $canvas, $r, $g, $b ) );
+	$w     = imagesx( $img );
+	$h     = imagesy( $img );
+	$inner = (int) round( $size * ( 1 - 2 * $pad ) );
+	$scale = min( $inner / $w, $inner / $h );
+	$dw    = (int) round( $w * $scale );
+	$dh    = (int) round( $h * $scale );
+	imagealphablending( $canvas, true );
+	imagecopyresampled( $canvas, $img, (int) ( ( $size - $dw ) / 2 ), (int) ( ( $size - $dh ) / 2 ), 0, 0, $dw, $dh, $w, $h );
+	imagepng( $canvas, $out );
+	imagedestroy( $canvas );
+	imagedestroy( $img );
+	return is_readable( $out ) ? $out : $default;
+}
