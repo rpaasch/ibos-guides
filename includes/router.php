@@ -19,13 +19,34 @@ function ibos_guides_rule_regex( $slug ) {
 
 add_action( 'init', 'ibos_guides_register_rewrites', 20 );
 function ibos_guides_register_rewrites() {
+	// Tidligere adresser først (ellers ville fx en aktiv guide "a" fange "a/b/sw.js"):
+	// kun sw.js, som afregistrerer appen på enheder, der har den.
+	foreach ( array_keys( ibos_guides_retired() ) as $slug ) {
+		add_rewrite_rule( ibos_guides_retired_regex( $slug ), 'index.php?ibos_guide=retired', 'top' );
+	}
 	foreach ( ibos_guides_routes() as $slug => $id ) {
 		add_rewrite_rule( ibos_guides_rule_regex( $slug ), 'index.php?ibos_guide=' . (int) $id . '&ibos_guide_path=$matches[1]', 'top' );
 	}
-	// Tidligere adresser: kun sw.js, som afregistrerer appen på enheder, der har den.
-	foreach ( array_keys( (array) get_option( 'ibos_guides_retired', array() ) ) as $slug ) {
-		add_rewrite_rule( ibos_guides_retired_regex( $slug ), 'index.php?ibos_guide=retired', 'top' );
+}
+
+/**
+ * Tidligere guide-adresser (adresse => tidspunkt), uden udløbne (over 180 dage).
+ *
+ * @return array<string,int>
+ */
+function ibos_guides_retired() {
+	$retired = (array) get_option( 'ibos_guides_retired', array() );
+	$fresh   = array_filter(
+		$retired,
+		function ( $t ) {
+			return (int) $t > time() - 180 * DAY_IN_SECONDS;
+		}
+	);
+	if ( count( $fresh ) !== count( $retired ) ) {
+		update_option( 'ibos_guides_retired', $fresh, true );
+		update_option( 'ibos_guides_flush', 1 );
 	}
+	return $fresh;
 }
 
 /**
@@ -82,10 +103,21 @@ function ibos_guides_parse_request( $wp ) {
 		}
 		return;
 	}
-	foreach ( array_keys( (array) get_option( 'ibos_guides_retired', array() ) ) as $slug ) {
-		if ( ibos_guides_retired_regex( $slug ) === $wp->matched_rule && ! isset( ibos_guides_routes()[ $slug ] ) ) {
+	foreach ( array_keys( ibos_guides_retired() ) as $slug ) {
+		if ( ibos_guides_retired_regex( $slug ) !== $wp->matched_rule ) {
+			continue;
+		}
+		// Kun på præcis den tidligere adresse, og ikke hvis en side eller et indlæg nu bruger den
+		// (så kan et andet system have sin egen sw.js der – og appens egen baggrundskontrol
+		// fjerner den gamle app, når manifestet ikke længere findes).
+		$req = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_parse_url( wp_unslash( $_SERVER['REQUEST_URI'] ), PHP_URL_PATH ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- kun sammenlignet.
+		$own = (string) wp_parse_url( home_url( '/' . $slug . '/sw.js' ), PHP_URL_PATH );
+		if ( ! isset( ibos_guides_routes()[ $slug ] ) && $req === $own && ! get_page_by_path( $slug, OBJECT, array( 'page', 'post' ) ) ) {
 			ibos_guides_kill_sw();
 		}
+		unset( $wp->query_vars['ibos_guide'], $wp->query_vars['ibos_guide_path'] );
+		$wp->query_vars['error'] = '404';
+		return;
 	}
 	$guide_id = 0;
 	foreach ( ibos_guides_routes() as $slug => $id ) {
@@ -133,8 +165,9 @@ function ibos_guides_headers( $type, $cache = 'no-cache' ) {
 	if ( ! defined( 'DONOTCACHEPAGE' ) ) {
 		define( 'DONOTCACHEPAGE', true ); // Cache-plugins må ikke gemme app-svar.
 	}
-	while ( ob_get_level() > 0 ) {
-		ob_end_clean();
+	// Tøm output-buffere (fx fra cache-plugins) – men stop, hvis en buffer ikke kan fjernes.
+	while ( ob_get_level() > 0 && @ob_end_clean() ) { // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged
+		continue;
 	}
 	// HTML til en logget ind bruger må ikke gemmes i fælles caches (CDN/proxy).
 	if ( 0 === strpos( $type, 'text/html' ) && is_user_logged_in() ) {
@@ -144,9 +177,15 @@ function ibos_guides_headers( $type, $cache = 'no-cache' ) {
 	header( 'Content-Type: ' . $type );
 	header( 'Cache-Control: ' . $cache );
 	header( 'X-Content-Type-Options: nosniff' );
-	header( 'X-Frame-Options: SAMEORIGIN' );
-	header( "Content-Security-Policy: frame-ancestors 'self'" );
-	header( 'Referrer-Policy: strict-origin-when-cross-origin' );
+	// Overskriv ikke strengere headers, som sitet eller et sikkerhedsplugin allerede har sat.
+	$sent = strtolower( implode( "\n", headers_list() ) );
+	if ( false === strpos( $sent, 'x-frame-options:' ) ) {
+		header( 'X-Frame-Options: SAMEORIGIN' );
+	}
+	header( "Content-Security-Policy: frame-ancestors 'self'", false );
+	if ( false === strpos( $sent, 'referrer-policy:' ) ) {
+		header( 'Referrer-Policy: strict-origin-when-cross-origin' );
+	}
 }
 
 /**

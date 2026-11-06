@@ -63,6 +63,8 @@
       btn.textContent = 'Genindlæs';
       btn.addEventListener('click', function () {
         reloading = true;
+        // Har en anden fane allerede skiftet til den nye version, genindlæses blot.
+        if (worker.state === 'activated' || worker.state === 'redundant') { location.reload(); return; }
         worker.postMessage({ type: 'SKIP_WAITING' });
       });
       announce(['Ny version klar – ', btn], true);

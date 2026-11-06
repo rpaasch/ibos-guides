@@ -1,7 +1,9 @@
 // Eksporterer en Markdown-guide (repo med content/ og site.config.json) til import/<key>.json,
 // som pluginets importør kan læse. Billeder hentes ved import fra GitHub (raw.githubusercontent.com).
 //
-// Brug: node tools/export-guide.mjs <repo-mappe> <nøgle> <github-ejer/repo> [branch] [farve]
+// Brug: node tools/export-guide.mjs <repo-mappe> <nøgle> <github-ejer/repo> [commit] [farve]
+// <commit> skal være en commit, der findes på GitHub (fx origin/main). Billederne hentes ved import
+// fra præcis den commit, og hvert billedes SHA-256 gemmes og tjekkes ved import.
 // Fx:   node tools/export-guide.mjs ../O-og-M om-teknik rpaasch/O-og-M main '#00628b'
 // Nøglen bliver også appens adresse i WordPress (fx /om-teknik/).
 import fs from 'node:fs';
@@ -9,8 +11,10 @@ import path from 'node:path';
 import MarkdownIt from 'markdown-it';
 import sharp from 'sharp';
 import { readContent, flatten } from './content.mjs';
+import { execFileSync } from 'node:child_process';
+import crypto from 'node:crypto';
 
-const [repoDir, key, ghRepo, branch = 'main', colorArg] = process.argv.slice(2);
+const [repoDir, key, ghRepo, commitArg = 'origin/main', colorArg] = process.argv.slice(2);
 if (!repoDir || !key || !ghRepo) {
   console.error('Brug: node tools/export-guide.mjs <repo-mappe> <nøgle> <ejer/repo> [branch]');
   process.exit(1);
@@ -161,11 +165,20 @@ if (fs.existsSync(iconSrc)) {
   iconPng = (await sharp(buf, { density: 384 }).resize(512, 512).png().toBuffer()).toString('base64');
 }
 
+// Fastlås til en commit og beregn hash ud fra filerne i netop den commit.
+const commit = execFileSync('git', ['-C', ROOT, 'rev-parse', commitArg], { encoding: 'utf8' }).trim();
+if (!/^[0-9a-f]{40}$/.test(commit)) throw new Error('Ugyldig commit: ' + commit);
+const hashes = {};
+for (const rel of images.keys()) {
+  const buf = execFileSync('git', ['-C', ROOT, 'show', `${commit}:${rel}`], { maxBuffer: 64 * 1024 * 1024 });
+  hashes[rel] = crypto.createHash('sha256').update(buf).digest('hex');
+}
+
 const out = {
-  format: 1,
+  format: 2,
   key,
   source: `https://github.com/${ghRepo}`,
-  raw_base: `https://raw.githubusercontent.com/${ghRepo}/${branch}/`,
+  raw_base: `https://raw.githubusercontent.com/${ghRepo}/${commit}/`,
   guide: {
     title: cfg.appName,
     slug: key,
@@ -180,6 +193,7 @@ const out = {
   },
   pages,
   images: [...images.keys()],
+  hashes,
 };
 const file = path.join(path.dirname(new URL(import.meta.url).pathname), '..', 'import', `${key}.json`);
 fs.writeFileSync(file, JSON.stringify(out, null, 1));

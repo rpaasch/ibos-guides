@@ -42,6 +42,7 @@ function ibos_guides_register_post_type() {
 			'query_var'           => false,
 			'capability_type'     => 'page',
 			'map_meta_cap'        => true,
+			'rest_controller_class' => 'IBOS_Guides_REST_Controller',
 		)
 	);
 }
@@ -56,8 +57,9 @@ function ibos_guides_register_post_type() {
 
 add_filter( 'rest_pre_dispatch', 'ibos_guides_rest_guard', 10, 3 );
 function ibos_guides_rest_guard( $result, $server, $request ) {
-	$route = (string) $request->get_route();
-	if ( 0 === strpos( $route, '/wp/v2/' . IBOS_GUIDES_CPT ) && ! current_user_can( 'edit_pages' ) ) {
+	// Ekstra værn: WordPress matcher REST-ruter uden forskel på store og små bogstaver.
+	$route = strtolower( (string) $request->get_route() );
+	if ( false !== strpos( $route, IBOS_GUIDES_CPT ) && ! current_user_can( 'edit_pages' ) ) {
 		return new WP_Error( 'rest_forbidden', __( 'Guide-sider er kun tilgængelige for redaktører via REST.', 'ibos-guides' ), array( 'status' => rest_authorization_required_code() ) );
 	}
 	return $result;
@@ -295,6 +297,17 @@ function ibos_guides_slug_problem( $slug, $post_id ) {
 	return '';
 }
 
+/**
+ * Læser et tekstfelt fra $_POST. Arrays og andre typer giver ''.
+ *
+ * @param string $key Feltnavn.
+ * @return string
+ */
+function ibos_guides_post_str( $key ) {
+	// phpcs:ignore WordPress.Security.NonceVerification.Missing -- nonce tjekkes af kalderen.
+	return isset( $_POST[ $key ] ) && is_scalar( $_POST[ $key ] ) ? (string) wp_unslash( $_POST[ $key ] ) : '';
+}
+
 add_action( 'save_post_' . IBOS_GUIDES_CPT, 'ibos_guides_save', 10, 2 );
 function ibos_guides_save( $post_id, $post ) {
 	if ( wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) ) {
@@ -302,9 +315,9 @@ function ibos_guides_save( $post_id, $post ) {
 	}
 	ibos_guides_bump( $post_id );
 
-	if ( isset( $_POST['ibg_nonce'] ) && wp_verify_nonce( sanitize_text_field( wp_unslash( $_POST['ibg_nonce'] ) ), 'ibg_save_' . $post_id ) && current_user_can( 'edit_post', $post_id ) ) {
+	if ( wp_verify_nonce( ibos_guides_post_str( 'ibg_nonce' ), 'ibg_save_' . $post_id ) && current_user_can( 'edit_post', $post_id ) ) {
 		update_post_meta( $post_id, '_ibg_hidden', empty( $_POST['ibg_hidden'] ) ? '' : '1' );
-		$cm = isset( $_POST['ibg_child_menu'] ) ? sanitize_key( wp_unslash( $_POST['ibg_child_menu'] ) ) : '';
+		$cm = sanitize_key( ibos_guides_post_str( 'ibg_child_menu' ) );
 		update_post_meta( $post_id, '_ibg_child_menu', in_array( $cm, array( 'tiles', 'list' ), true ) ? $cm : '' );
 
 		if ( ! $post->post_parent && isset( $_POST['ibg_slug'] ) && empty( $_POST['ibg_is_guide'] ) ) {
@@ -313,7 +326,7 @@ function ibos_guides_save( $post_id, $post ) {
 			delete_post_meta( $post_id, '_ibg_slug' );
 			delete_post_meta( $post_id, '_ibg_slug_error' );
 		} elseif ( ! $post->post_parent && isset( $_POST['ibg_slug'] ) ) {
-			$slug = ibos_guides_clean_slug( sanitize_text_field( wp_unslash( $_POST['ibg_slug'] ) ) );
+			$slug = ibos_guides_clean_slug( sanitize_text_field( ibos_guides_post_str( 'ibg_slug' ) ) );
 			if ( '' === $slug ) {
 				$slug = ibos_guides_clean_slug( $post->post_name ? $post->post_name : sanitize_title( $post->post_title ) );
 			}
@@ -325,20 +338,20 @@ function ibos_guides_save( $post_id, $post ) {
 				delete_post_meta( $post_id, '_ibg_slug_error' );
 				update_post_meta( $post_id, '_ibg_slug', $slug );
 			}
-			update_post_meta( $post_id, '_ibg_short_name', sanitize_text_field( wp_unslash( isset( $_POST['ibg_short_name'] ) ? $_POST['ibg_short_name'] : '' ) ) );
-			$color = sanitize_hex_color( wp_unslash( isset( $_POST['ibg_color'] ) ? $_POST['ibg_color'] : '' ) );
+			update_post_meta( $post_id, '_ibg_short_name', sanitize_text_field( ibos_guides_post_str( 'ibg_short_name' ) ) );
+			$color = sanitize_hex_color( ibos_guides_post_str( 'ibg_color' ) );
 			update_post_meta( $post_id, '_ibg_color', $color ? $color : '#00656c' );
 			// Ikon og logo skal være billeder, som brugeren selv må se.
 			foreach ( array( 'icon_id', 'logo_id' ) as $key ) {
-				$att = absint( isset( $_POST[ 'ibg_' . $key ] ) ? $_POST[ 'ibg_' . $key ] : 0 );
+				$att = absint( ibos_guides_post_str( 'ibg_' . $key ) );
 				if ( $att && ( ! wp_attachment_is_image( $att ) || ! current_user_can( 'read_post', $att ) ) ) {
 					$att = 0;
 				}
 				update_post_meta( $post_id, '_ibg_' . $key, $att );
 			}
-			update_post_meta( $post_id, '_ibg_publisher', sanitize_text_field( wp_unslash( isset( $_POST['ibg_publisher'] ) ? $_POST['ibg_publisher'] : '' ) ) );
-			update_post_meta( $post_id, '_ibg_colophon', sanitize_text_field( wp_unslash( isset( $_POST['ibg_colophon'] ) ? $_POST['ibg_colophon'] : '' ) ) );
-			$menu = sanitize_key( wp_unslash( isset( $_POST['ibg_menu'] ) ? $_POST['ibg_menu'] : 'tiles' ) );
+			update_post_meta( $post_id, '_ibg_publisher', sanitize_text_field( ibos_guides_post_str( 'ibg_publisher' ) ) );
+			update_post_meta( $post_id, '_ibg_colophon', sanitize_text_field( ibos_guides_post_str( 'ibg_colophon' ) ) );
+			$menu = sanitize_key( ibos_guides_post_str( 'ibg_menu' ) );
 			update_post_meta( $post_id, '_ibg_menu', 'list' === $menu ? 'list' : 'tiles' );
 		}
 	}
@@ -365,7 +378,12 @@ function ibos_guides_before_update( $post_id, $data ) {
 // (og gendannes sammen med den). Ellers bliver de forældreløse, når papirkurven tømmes.
 add_action( 'wp_trash_post', 'ibos_guides_trash_children' );
 function ibos_guides_trash_children( $post_id ) {
-	$post = get_post( $post_id );
+	static $seen = array(); // Værn mod cirkulære forælderkæder.
+	if ( isset( $seen[ $post_id ] ) ) {
+		return;
+	}
+	$seen[ $post_id ] = true;
+	$post             = get_post( $post_id );
 	if ( ! $post || IBOS_GUIDES_CPT !== $post->post_type ) {
 		return;
 	}
@@ -392,7 +410,12 @@ function ibos_guides_untrash_status( $new_status, $post_id, $previous_status ) {
 // forældreløse sider på øverste niveau.
 add_action( 'before_delete_post', 'ibos_guides_delete_children', 10, 2 );
 function ibos_guides_delete_children( $post_id, $post = null ) {
-	$post = $post ? $post : get_post( $post_id );
+	static $seen = array(); // Værn mod cirkulære forælderkæder.
+	if ( isset( $seen[ $post_id ] ) ) {
+		return;
+	}
+	$seen[ $post_id ] = true;
+	$post             = $post ? $post : get_post( $post_id );
 	if ( ! $post || IBOS_GUIDES_CPT !== $post->post_type ) {
 		return;
 	}
@@ -481,6 +504,9 @@ function ibos_guides_list_notice() {
 	$screen = get_current_screen();
 	if ( ! $screen || 'edit-' . IBOS_GUIDES_CPT !== $screen->id ) {
 		return;
+	}
+	if ( ! get_option( 'permalink_structure' ) ) {
+		echo '<div class="notice notice-error"><p>' . esc_html__( 'Guides kræver "pæne" permalinks. Gå til Indstillinger → Permalinks, og vælg fx "Indlægsnavn". Med "Simpel" kan apps ikke vises.', 'ibos-guides' ) . '</p></div>';
 	}
 	echo '<div class="notice notice-info"><p>' . esc_html__( 'Hver guide er en side på øverste niveau. Kapitler og sider ligger under den. Brug "Hurtig redigering" til at ændre rækkefølge og forælder.', 'ibos-guides' ) . ' <a href="' . esc_url( admin_url( 'edit.php?post_type=' . IBOS_GUIDES_CPT . '&page=ibos-guides-import' ) ) . '">' . esc_html__( 'Importér O&M-teknik eller Ledsageteknik', 'ibos-guides' ) . '</a></p></div>';
 }
