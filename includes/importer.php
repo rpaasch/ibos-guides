@@ -15,9 +15,13 @@ defined( 'ABSPATH' ) || exit;
  */
 function ibos_guides_import_packages() {
 	$out = array();
-	foreach ( glob( IBOS_GUIDES_DIR . '/import/*.json' ) as $file ) {
+	foreach ( (array) glob( IBOS_GUIDES_DIR . '/import/*.json' ) as $file ) {
 		$data = json_decode( (string) file_get_contents( $file ), true ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
-		if ( is_array( $data ) && isset( $data['key'], $data['guide'], $data['pages'] ) && preg_match( '/^[a-z0-9-]+$/', $data['key'] ) ) {
+		// Kun gyldige pakker: billeder hentes fra en fastlåst commit på GitHub og tjekkes mod SHA-256.
+		if ( is_array( $data ) && isset( $data['key'], $data['guide'], $data['pages'], $data['images'], $data['hashes'], $data['raw_base'] )
+			&& is_string( $data['key'] ) && preg_match( '/^[a-z0-9-]+$/', $data['key'] )
+			&& is_array( $data['pages'] ) && is_array( $data['images'] ) && is_array( $data['hashes'] )
+			&& is_string( $data['raw_base'] ) && preg_match( '#^https://raw\.githubusercontent\.com/[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+/[0-9a-f]{40}/$#', $data['raw_base'] ) ) {
 			$out[ $data['key'] ] = $data;
 		}
 	}
@@ -46,11 +50,11 @@ function ibos_guides_imported( $key ) {
 
 add_action( 'admin_menu', 'ibos_guides_import_menu' );
 function ibos_guides_import_menu() {
-	add_submenu_page( 'edit.php?post_type=' . IBOS_GUIDES_CPT, __( 'Importér guide', 'ibos-guides' ), __( 'Importér', 'ibos-guides' ), 'edit_pages', 'ibos-guides-import', 'ibos_guides_import_page' );
+	add_submenu_page( 'edit.php?post_type=' . IBOS_GUIDES_CPT, __( 'Importér guide', 'ibos-guides' ), __( 'Importér', 'ibos-guides' ), 'publish_pages', 'ibos-guides-import', 'ibos_guides_import_page' );
 }
 
 function ibos_guides_import_page() {
-	if ( ! current_user_can( 'edit_pages' ) || ! current_user_can( 'upload_files' ) ) {
+	if ( ! current_user_can( 'publish_pages' ) || ! current_user_can( 'upload_files' ) ) {
 		wp_die( esc_html__( 'Du har ikke adgang til denne side.', 'ibos-guides' ) );
 	}
 	$packages = ibos_guides_import_packages();
@@ -146,7 +150,7 @@ function ibos_guides_import_page() {
 add_action( 'wp_ajax_ibos_guides_import', 'ibos_guides_import_ajax' );
 function ibos_guides_import_ajax() {
 	check_ajax_referer( 'ibos_guides_import' );
-	if ( ! current_user_can( 'edit_pages' ) || ! current_user_can( 'upload_files' ) ) {
+	if ( ! current_user_can( 'publish_pages' ) || ! current_user_can( 'upload_files' ) ) {
 		wp_send_json_error( array( 'message' => __( 'Ingen adgang.', 'ibos-guides' ) ), 403 );
 	}
 	$key      = isset( $_POST['key'] ) ? sanitize_key( wp_unslash( $_POST['key'] ) ) : '';
@@ -154,9 +158,24 @@ function ibos_guides_import_ajax() {
 	if ( ! isset( $packages[ $key ] ) ) {
 		wp_send_json_error( array( 'message' => __( 'Ukendt guide.', 'ibos-guides' ) ) );
 	}
+	$existing = ibos_guides_imported( $key );
+	if ( $existing && false === get_option( 'ibos_guides_import_' . $key ) ) {
+		wp_send_json_error( array( 'message' => __( 'Guiden er allerede importeret.', 'ibos-guides' ) ) );
+	}
+	// Lås: kun ét importskridt ad gangen pr. guide (fx hvis siden er åben i to faner).
+	$lock = 'ibos_guides_import_lock_' . $key;
+	if ( ! add_option( $lock, time(), '', false ) ) {
+		if ( time() - (int) get_option( $lock ) < 5 * MINUTE_IN_SECONDS ) {
+			wp_send_json_error( array( 'message' => __( 'Importen kører allerede i et andet vindue.', 'ibos-guides' ) ) );
+		}
+		update_option( $lock, time(), false ); // Forældet lås efter et nedbrud.
+	}
 	try {
-		wp_send_json_success( ibos_guides_import_step( $packages[ $key ] ) );
-	} catch ( Exception $e ) {
+		$result = ibos_guides_import_step( $packages[ $key ] );
+		delete_option( $lock );
+		wp_send_json_success( $result );
+	} catch ( Throwable $e ) {
+		delete_option( $lock );
 		wp_send_json_error( array( 'message' => $e->getMessage() ) );
 	}
 }
@@ -208,12 +227,23 @@ function ibos_guides_import_step( $pkg ) {
 			if ( is_wp_error( $root_id ) ) {
 				throw new Exception( $root_id->get_error_message() );
 			}
+			// Samme adressetjek som ved manuelt gem: en eksisterende side må ikke blive skjult.
+			$problem = ibos_guides_slug_problem( $g['slug'], $root_id );
+			if ( $problem ) {
+				update_post_meta( $root_id, '_ibg_slug', '' );
+				update_post_meta( $root_id, '_ibg_slug_error', $problem );
+			}
 			$root = get_post( $root_id );
 		}
 		$state['map']['root'] = (int) $root->ID;
+		update_option( $opt, $state, false );
 		foreach ( $pkg['pages'] as $p ) {
 			if ( isset( $state['map'][ $p['key'] ] ) ) {
 				continue;
+			}
+			if ( ! isset( $state['map'][ $p['parent'] ] ) ) {
+				/* translators: %s: side */
+				throw new Exception( sprintf( __( 'Pakken er ugyldig: siden "%s" har en ukendt forælder.', 'ibos-guides' ), $p['title'] ) );
 			}
 			$id = wp_insert_post(
 				array(
@@ -238,6 +268,7 @@ function ibos_guides_import_step( $pkg ) {
 				throw new Exception( $id->get_error_message() );
 			}
 			$state['map'][ $p['key'] ] = (int) $id;
+			update_option( $opt, $state, false ); // Gem fremdrift efter hver side (sikker genoptagelse).
 		}
 		// App-ikon.
 		if ( ! empty( $g['icon_png'] ) && ! get_post_meta( $root->ID, '_ibg_icon_id', true ) ) {
@@ -271,10 +302,38 @@ function ibos_guides_import_step( $pkg ) {
 				break;
 			}
 			$n++;
-			$tmp = download_url( $pkg['raw_base'] . str_replace( '%2F', '/', rawurlencode( $path ) ), 60 );
-			if ( is_wp_error( $tmp ) ) {
+			if ( ! is_string( $path ) || ! preg_match( '#^content/[A-Za-z0-9_./-]+\.(jpe?g|png|webp|gif)$#i', $path ) || false !== strpos( $path, '..' ) || empty( $pkg['hashes'][ $path ] ) ) {
+				/* translators: %s: fil */
+				throw new Exception( sprintf( __( 'Ugyldig billedsti i pakken: %s', 'ibos-guides' ), is_string( $path ) ? $path : '?' ) );
+			}
+			$tmp = wp_tempnam( basename( $path ) );
+			$res = wp_safe_remote_get(
+				$pkg['raw_base'] . str_replace( '%2F', '/', rawurlencode( $path ) ),
+				array(
+					'timeout'             => 60,
+					'stream'              => true,
+					'filename'            => $tmp,
+					'limit_response_size' => 25 * MB_IN_BYTES,
+				)
+			);
+			if ( ! is_wp_error( $res ) && 404 === (int) wp_remote_retrieve_response_code( $res ) ) {
+				// Billedet findes ikke (længere): spring over, så importen ikke sidder fast.
+				@unlink( $tmp ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.unlink_unlink
+				$state['images'][ $path ] = 0;
+				$state['skipped'][]       = $path;
+				update_option( $opt, $state, false );
+				continue;
+			}
+			if ( is_wp_error( $res ) || 200 !== (int) wp_remote_retrieve_response_code( $res ) ) {
+				@unlink( $tmp ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.unlink_unlink
 				/* translators: 1: fil, 2: fejl */
-				throw new Exception( sprintf( __( 'Kunne ikke hente %1$s (%2$s).', 'ibos-guides' ), $path, $tmp->get_error_message() ) );
+				throw new Exception( sprintf( __( 'Kunne ikke hente %1$s (%2$s).', 'ibos-guides' ), $path, is_wp_error( $res ) ? $res->get_error_message() : wp_remote_retrieve_response_code( $res ) ) );
+			}
+			// Forsyningskæde: billedet skal være præcis det, der blev eksporteret.
+			if ( ! hash_equals( strtolower( (string) $pkg['hashes'][ $path ] ), (string) hash_file( 'sha256', $tmp ) ) ) {
+				@unlink( $tmp ); // phpcs:ignore WordPress.PHP.NoSilencedErrors.Discouraged,WordPress.WP.AlternativeFunctions.unlink_unlink
+				/* translators: %s: fil */
+				throw new Exception( sprintf( __( 'Billedet %s matcher ikke den forventede kontrolsum og blev afvist.', 'ibos-guides' ), $path ) );
 			}
 			$att = media_handle_sideload( array( 'name' => basename( $path ), 'tmp_name' => $tmp ), (int) $state['map']['root'] );
 			if ( is_wp_error( $att ) ) {
@@ -283,6 +342,7 @@ function ibos_guides_import_step( $pkg ) {
 			}
 			update_post_meta( $att, '_wp_attachment_image_alt', isset( $alts[ $path ] ) ? $alts[ $path ] : '' );
 			$state['images'][ $path ] = (int) $att;
+			update_option( $opt, $state, false ); // Gem efter hvert billede (ingen dubletter ved genoptagelse).
 		}
 		$done_imgs = count( $state['images'] );
 		if ( $done_imgs >= count( $pkg['images'] ) ) {
@@ -305,7 +365,7 @@ function ibos_guides_import_step( $pkg ) {
 			'/<!-- ibg:image (\{.*?\}) \/-->/s',
 			function ( $m ) use ( $state ) {
 				$d = json_decode( $m[1], true );
-				return isset( $state['images'][ $d['src'] ] ) ? ibos_guides_image_block( $state['images'][ $d['src'] ], $d ) : '';
+				return ! empty( $state['images'][ $d['src'] ] ) ? ibos_guides_image_block( $state['images'][ $d['src'] ], $d ) : '';
 			},
 			$post->post_content
 		);
@@ -317,16 +377,28 @@ function ibos_guides_import_step( $pkg ) {
 			)
 		);
 	}
+	$skipped = isset( $state['skipped'] ) ? count( $state['skipped'] ) : 0;
 	delete_option( $opt );
 	ibos_guides_refresh_routes();
 	update_option( 'ibos_guides_flush', 1 );
 	ibos_guides_bump( $state['map']['root'] );
+	if ( '' === ibos_guides_settings( $state['map']['root'] )['slug'] ) {
+		return array(
+			'progress' => 100,
+			'done'     => true,
+			'url'      => get_edit_post_link( $state['map']['root'], 'raw' ),
+			/* translators: %s: guidens navn */
+			'message'  => sprintf( __( '%s er importeret, men adressen var optaget. Vælg en anden adresse i App-indstillinger og gem.', 'ibos-guides' ), $pkg['guide']['title'] ),
+		);
+	}
 	return array(
 		'progress' => 100,
 		'done'     => true,
 		'url'      => ibos_guides_base_url( $state['map']['root'] ),
 		/* translators: %s: guidens navn */
-		'message'  => sprintf( __( '%s er importeret og udgivet.', 'ibos-guides' ), $pkg['guide']['title'] ),
+		'message'  => sprintf( __( '%s er importeret og udgivet.', 'ibos-guides' ), $pkg['guide']['title'] )
+			/* translators: %d: antal */
+			. ( $skipped ? ' ' . sprintf( _n( '%d billede kunne ikke hentes og er udeladt.', '%d billeder kunne ikke hentes og er udeladt.', $skipped, 'ibos-guides' ), $skipped ) : '' ),
 	);
 }
 

@@ -52,7 +52,23 @@ De findes på guidens øverste side, i boksen **App-indstillinger** under editor
 - menuvisning (felter eller liste)
 
 ### En ny guide
-Opret en ny side **uden forælder**, udfyld app-indstillingerne, og udgiv. Opret derefter kapitler og sider under den.
+Opret en ny side **uden forælder**, sæt flueben ved **Dette er en guide**, udfyld app-indstillingerne, og udgiv. Opret derefter kapitler og sider under den.
+
+Adressen afvises, hvis den allerede bruges af en side, et indlæg, en anden guide eller WordPress selv (fx `/admin/`, `/category/`). Så vises en fejl i App-indstillinger, og den gamle adresse bevares.
+
+### Sikkerhed og synlighed
+- Kun **udgivne** sider vises i appen. Kladder, private, planlagte og **adgangskodebeskyttede** sider – og alt under dem – vises hverken i appen, søgningen, offline-cachen eller REST-API'et.
+- **"Skjul i menu …"** er *ikke* adgangskontrol: en skjult side kan åbnes, hvis man kender adressen. Brug Kladde eller Privat til indhold, der ikke må være offentligt.
+- Lægges en guide i papirkurven, følger kapitler og sider med (og gendannes sammen med den).
+- Gøres en guide privat, slettes eller får den ny adresse – eller deaktiveres pluginet – fjerner telefoner, der har appen installeret, selv appen og det gemte indhold, næste gang den åbnes med internet.
+- Billeder, der hører til guide-sider, vises ikke via WordPress' medie-API eller "vedhæftningssider" for andre end redaktører.
+- Søgeindeks og offline-liste bygges altid som en anonym besøgende og genopbygges i baggrunden efter ændringer – også når indhold, der vises via blokke (fx "Seneste indlæg"), ændres.
+- Importen henter billeder fra en fastlåst commit på GitHub og afviser billeder, hvis kontrolsum ikke passer.
+- På et site med én installation må redaktører som standard indsætte JavaScript. Har flere redaktører adgang, så sæt `define( 'DISALLOW_UNFILTERED_HTML', true );` i wp-config.php.
+- Permalinks må ikke stå på "Simpel" (der vises en advarsel under Guides).
+
+### Opdatering fra 1.0.0
+Upload den nye zip og vælg "Erstat nuværende med uploadet". Eksisterende guides og deres adresser bevares automatisk.
 
 ---
 
@@ -82,16 +98,16 @@ Undtag guidernes adresser, fx `/om-teknik/` og `/ledsageteknik/`, fra sidecache 
 npm install
 ```
 ```bash
-node tools/export-guide.mjs ../O-og-M om-teknik rpaasch/O-og-M main '#00628b'
+node tools/export-guide.mjs ../O-og-M om-teknik rpaasch/O-og-M origin/main '#00628b'
 ```
 ```bash
-node tools/export-guide.mjs ../ledsageteknik ledsageteknik rpaasch/ledsageteknik main '#00656c'
+node tools/export-guide.mjs ../ledsageteknik ledsageteknik rpaasch/ledsageteknik origin/main '#00656c'
 ```
 ```bash
 npm run zip
 ```
 
-`export-guide.mjs` omsætter en Markdown-guide (`content/` + `site.config.json`) til WordPress-blokke i `import/<nøgle>.json`. `npm run zip` pakker `ibos-guides.zip`.
+`export-guide.mjs` omsætter en Markdown-guide (`content/` + `site.config.json`) til WordPress-blokke i `import/<nøgle>.json`, fastlåser billedernes kilde til den angivne commit (som skal være pushet til GitHub) og gemmer en SHA-256 pr. billede. `npm run zip` pakker `ibos-guides.zip` reproducerbart ud fra den seneste commit (commit først).
 
 ---
 

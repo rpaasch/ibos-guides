@@ -4,6 +4,8 @@ import path from 'node:path';
 import matter from 'gray-matter';
 
 const PREFIX_RE = /^(\d+)-(.+)$/;
+// Sikkerhed: gray-matter kører ellers "---js"-front matter med eval. Kun YAML er tilladt.
+const NO_CODE = { parse() { throw new Error('Front matter med kode (fx ---js) er ikke tilladt.'); } };
 
 export function parseName(name) {
   const base = name.replace(/\.md$/i, '');
@@ -40,7 +42,7 @@ function firstH1(md) {
 
 function readMd(file) {
   const raw = fs.readFileSync(file, 'utf8');
-  const parsed = matter(raw);
+  const parsed = matter(raw, { engines: { js: NO_CODE, javascript: NO_CODE, coffee: NO_CODE, coffeescript: NO_CODE, cson: NO_CODE } });
   return { data: parsed.data || {}, body: parsed.content };
 }
 
