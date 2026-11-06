@@ -50,7 +50,7 @@ function ibos_guides_imported( $key ) {
 
 add_action( 'admin_menu', 'ibos_guides_import_menu' );
 function ibos_guides_import_menu() {
-	add_submenu_page( 'edit.php?post_type=' . IBOS_GUIDES_CPT, __( 'Importér guide', 'ibos-guides' ), __( 'Importér', 'ibos-guides' ), 'publish_pages', 'ibos-guides-import', 'ibos_guides_import_page' );
+	add_submenu_page( 'ibos-guides', __( 'Importér guide', 'ibos-guides' ), __( 'Importér', 'ibos-guides' ), 'publish_pages', 'ibos-guides-import', 'ibos_guides_import_page' );
 }
 
 function ibos_guides_import_page() {

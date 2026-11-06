@@ -27,6 +27,7 @@ require_once IBOS_GUIDES_DIR . '/includes/router.php';
 require_once IBOS_GUIDES_DIR . '/includes/render.php';
 require_once IBOS_GUIDES_DIR . '/includes/icons.php';
 require_once IBOS_GUIDES_DIR . '/includes/importer.php';
+require_once IBOS_GUIDES_DIR . '/includes/admin-tree.php';
 
 // Opgradering fra 1.0.0: dengang kunne en guides adresse komme fra sidens navn (tom adresse),
 // og der var ingen markør. Guides, der var aktive apps i 1.0.0 (stod i ruterne), får deres

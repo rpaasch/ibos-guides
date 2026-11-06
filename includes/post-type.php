@@ -31,12 +31,13 @@ function ibos_guides_register_post_type() {
 			'publicly_queryable'  => false,
 			'exclude_from_search' => true,
 			'show_ui'             => true,
-			'show_in_menu'        => true,
+			'show_in_menu'        => 'ibos-guides', // Under menuen "Guides" (oversigten er forsiden).
 			'show_in_nav_menus'   => false,
 			'show_in_rest'        => true,
 			'hierarchical'        => true,
 			'menu_position'       => 21,
 			'menu_icon'           => 'dashicons-smartphone',
+			// "page-attributes" giver WordPress' normale felter Overordnet og Rækkefølge – som ved sider.
 			'supports'            => array( 'title', 'editor', 'excerpt', 'page-attributes', 'revisions' ),
 			'rewrite'             => false,
 			'query_var'           => false,
@@ -85,25 +86,31 @@ function ibos_guides_post_link( $link, $post ) {
  * Metabokse
  * ------------------------------------------------------------------------- */
 
+// Flyttes en side til en anden forælder, lægges den sidst dér.
+add_filter( 'wp_insert_post_data', 'ibos_guides_parent_changed_order', 11, 2 );
+function ibos_guides_parent_changed_order( $data, $postarr ) {
+	if ( IBOS_GUIDES_CPT !== $data['post_type'] || empty( $postarr['ID'] ) ) {
+		return $data;
+	}
+	$old = get_post( (int) $postarr['ID'] );
+	// Kun hvis rækkefølgen ikke samtidig er sat med vilje.
+	if ( $old && (int) $old->post_parent !== (int) $data['post_parent'] && (int) $old->menu_order === (int) $data['menu_order'] ) {
+		$last               = ibos_guides_children_admin( (int) $data['post_parent'] );
+		$data['menu_order'] = $last ? (int) end( $last )->menu_order + 10 : 10;
+	}
+	return $data;
+}
+
 add_action( 'add_meta_boxes_' . IBOS_GUIDES_CPT, 'ibos_guides_meta_boxes' );
 function ibos_guides_meta_boxes( $post ) {
 	// App-indstillinger øverst i sidepanelet (i blok-editoren er "normal"-bokse gemt i en
 	// sammenklappet bjælke nederst, hvor de er svære at finde).
+	add_meta_box( 'ibg-place', __( 'Placering', 'ibos-guides' ), 'ibos_guides_box_place', null, 'side', 'high' );
 	if ( ! $post->post_parent ) {
 		add_meta_box( 'ibg-settings', __( 'App-indstillinger', 'ibos-guides' ), 'ibos_guides_box_settings', null, 'side', 'high' );
 	}
-	add_meta_box( 'ibg-help', __( 'Sådan virker guides', 'ibos-guides' ), 'ibos_guides_box_help', null, 'side', 'high' );
 	add_meta_box( 'ibg-check', __( 'Tilgængelighedstjek', 'ibos-guides' ), 'ibos_guides_box_check', null, 'side', 'default' );
 	add_meta_box( 'ibg-page', __( 'Visning', 'ibos-guides' ), 'ibos_guides_box_page', null, 'side', 'default' );
-}
-
-function ibos_guides_box_help( $post ) {
-	echo '<p>' . esc_html__( 'En side uden forælder er en guide (en app). Dens tekst bliver appens forside.', 'ibos-guides' ) . '</p>';
-	echo '<p>' . esc_html__( 'Sider med guiden som forælder er kapitler. Sider under et kapitel er indholdssider.', 'ibos-guides' ) . '</p>';
-	echo '<p>' . esc_html__( 'Vælg forælder og rækkefølge under "Sideattributter". Lavt tal vises først.', 'ibos-guides' ) . '</p>';
-	if ( 'publish' === $post->post_status ) {
-		echo '<p><a href="' . esc_url( get_permalink( $post ) ) . '">' . esc_html__( 'Vis siden i appen', 'ibos-guides' ) . '</a></p>';
-	}
 }
 
 function ibos_guides_box_check( $post ) {
@@ -596,5 +603,5 @@ function ibos_guides_list_notice() {
 	if ( ! get_option( 'permalink_structure' ) ) {
 		echo '<div class="notice notice-error"><p>' . esc_html__( 'Guides kræver "pæne" permalinks. Gå til Indstillinger → Permalinks, og vælg fx "Indlægsnavn". Med "Simpel" kan apps ikke vises.', 'ibos-guides' ) . '</p></div>';
 	}
-	echo '<div class="notice notice-info"><p>' . esc_html__( 'Hver guide er en side på øverste niveau. Kapitler og sider ligger under den. Brug "Hurtig redigering" til at ændre rækkefølge og forælder.', 'ibos-guides' ) . ' <a href="' . esc_url( admin_url( 'edit.php?post_type=' . IBOS_GUIDES_CPT . '&page=ibos-guides-import' ) ) . '">' . esc_html__( 'Importér O&M-teknik eller Ledsageteknik', 'ibos-guides' ) . '</a></p></div>';
+	echo '<div class="notice notice-info"><p>' . esc_html__( 'Dette er en liste over alle sider i alle guides. Det er nemmest at arbejde i', 'ibos-guides' ) . ' <a href="' . esc_url( admin_url( 'admin.php?page=ibos-guides' ) ) . '">' . esc_html__( 'Guides → Oversigt', 'ibos-guides' ) . '</a>, ' . esc_html__( 'hvor guiderne vises som en indholdsfortegnelse.', 'ibos-guides' ) . '</p></div>';
 }

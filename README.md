@@ -33,7 +33,10 @@ Alt foregår under menupunktet **Guides**.
 | Side med guiden som forælder | **Et kapitel** i menuen | Ledsageteknik |
 | Side under et kapitel | **En indholdsside** | Grebet |
 
-- **Ny side:** Guides → Tilføj ny. Under **Sideattributter** til højre vælger du **Forælder** (kapitlet) og **Rækkefølge**. Lavt tal vises først, så brug spring af 10 (10, 20, 30 …), så der er plads til at indsætte sider imellem.
+- **Overblik:** **Guides → Oversigt** viser hver guide som et træ med kapitler og sider. Herfra kan du redigere, se siden i appen, flytte op/ned og oprette nye kapitler og sider direkte på det rigtige sted.
+- **Ny side:** Guides → Oversigt → **+ Ny side i kapitlet**. Siden lægges automatisk sidst i kapitlet. Du kan også bruge Guides → Ny guide og så vælge **Overordnet** øverst i panelet til højre (kapitlet for en side, guiden for et kapitel).
+- **Rækkefølge:** brug **Flyt op/ned** i Oversigt. Flyttes en side til et andet kapitel via Overordnet, lægges den sidst dér.
+- **Kapitler er sider:** et kapitel er selv en side. Den vises som menupunkt med sine undersider og kan have en kort intro-tekst.
 - **Tekst:** skriv i blok-editoren. Brug **Overskrift H2** og nedefter. Sidens titel er allerede overskrift 1.
 - **Billeder:** brug billedblokken, og udfyld **Alternativ tekst**. Er billedet kun pynt, så giv blokken CSS-klassen `dekorativ` (Avanceret → Ekstra CSS-klasse) og lad alt-teksten være tom.
 - **Kort beskrivelse i menuen:** udfyld **Uddrag** (excerpt).
@@ -42,7 +45,7 @@ Alt foregår under menupunktet **Guides**.
 - **Tilgængelighedstjek:** boksen af samme navn og kolonnen **Tjek** i listen viser fx manglende alt-tekster og spring i overskriftsniveauer.
 
 ### App-indstillinger
-Findes på guidens øverste side i boksen **App-indstillinger** øverst i panelet til højre i editoren. Guidens **titel** er appens navn, og teksten i editoren er appens forside.
+Findes på guidens øverste side i boksen **App-indstillinger** i panelet til højre i editoren (under Placering). Guidens **titel** er appens navn, og teksten i editoren er appens forside.
 
 | Indstilling | Forklaring |
 |---|---|

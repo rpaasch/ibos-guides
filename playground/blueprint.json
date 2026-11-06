@@ -5,7 +5,7 @@
     "description": "WordPress med IBOS Guides installeret. Gå til Guides → Importér for at hente O&M-teknik eller Ledsageteknik.",
     "author": "rpaasch"
   },
-  "landingPage": "/wp-admin/edit.php?post_type=ibos_guide_page&page=ibos-guides-import",
+  "landingPage": "/wp-admin/admin.php?page=ibos-guides-import",
   "preferredVersions": { "php": "8.3", "wp": "latest" },
   "features": { "networking": true },
   "login": true,
