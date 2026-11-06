@@ -1,2 +1,105 @@
-# ibos-guides
-WordPress-plugin til tilgængelige guide-apps (IBOS).
+# IBOS Guides – WordPress-plugin
+
+Et WordPress-plugin til tilgængelige guide-apps (PWA), fx **O&M-teknik** og **Ledsageteknik**. Indholdet redigeres som almindelige sider i WordPress. Hver guide får sin egen adresse, kan lægges på hjemmeskærmen som en app og virker uden internet.
+
+- Den færdige plugin-fil hedder **`ibos-guides.zip`**.
+- Pluginet rører ikke temaet. Appen vises i sit eget, enkle design i IBOS' farver.
+- Testet på WordPress 7.1.4 (samme version som ibos.dk) med PHP 8.3.
+
+---
+
+## Installation
+
+1. **Plugins → Tilføj nyt → Upload plugin**, vælg `ibos-guides.zip`, tryk **Installér nu** og derefter **Aktivér**.
+2. Gå til **Guides → Importér**, og tryk **Importér O&M-teknik** og/eller **Importér Ledsageteknik**.
+   - Billederne hentes fra GitHub (`raw.githubusercontent.com`) og lægges i mediebiblioteket med deres alt-tekster.
+   - O&M-teknik har 252 billeder og tager et par minutter. Lad siden være åben imens. Afbrydes importen, fortsætter den, hvor den slap, når du trykker igen.
+3. Appen ligger nu på fx `https://ibos.dk/om-teknik/` og `https://ibos.dk/ledsageteknik/`.
+
+**Krav:**
+- HTTPS
+- Permalinks må ikke stå på "Simpel"
+- Serveren skal kunne hente filer fra GitHub under importen
+
+---
+
+## Sådan redigerer du
+
+Alt foregår under menupunktet **Guides**.
+
+| Niveau | Hvad det er | Eksempel |
+|---|---|---|
+| Side uden forælder | **En guide (en app).** Teksten bliver appens forside. | O&M-teknik |
+| Side med guiden som forælder | **Et kapitel** i menuen | Ledsageteknik |
+| Side under et kapitel | **En indholdsside** | Grebet |
+
+- **Ny side:** Guides → Tilføj ny. Under **Sideattributter** til højre vælger du **Forælder** (kapitlet) og **Rækkefølge**. Lavt tal vises først, så brug spring af 10 (10, 20, 30 …), så der er plads til at indsætte sider imellem.
+- **Tekst:** skriv i blok-editoren. Brug **Overskrift H2** og nedefter. Sidens titel er allerede overskrift 1.
+- **Billeder:** brug billedblokken, og udfyld **Alternativ tekst**. Er billedet kun pynt, så giv blokken CSS-klassen `dekorativ` (Avanceret → Ekstra CSS-klasse) og lad alt-teksten være tom.
+- **Kort beskrivelse i menuen:** udfyld **Uddrag** (excerpt).
+- **Skjul en side:** sæt flueben ved "Skjul i menu …" i boksen **Visning**.
+- **Udgiv:** tryk **Opdatér**. Næste gang brugerne åbner appen med internet, får de beskeden "Ny version klar – Genindlæs".
+- **Tilgængelighedstjek:** boksen af samme navn og kolonnen **Tjek** i listen viser fx manglende alt-tekster og spring i overskriftsniveauer.
+
+### App-indstillinger
+De findes på guidens øverste side, i boksen **App-indstillinger** under editoren (åbn "Meta Boxes" nederst):
+
+- adresse
+- kort navn under ikonet
+- temafarve (kontrasten tjekkes)
+- app-ikon og eventuelt logo
+- udgiver og kolofon
+- menuvisning (felter eller liste)
+
+### En ny guide
+Opret en ny side **uden forælder**, udfyld app-indstillingerne, og udgiv. Opret derefter kapitler og sider under den.
+
+---
+
+## Cache-plugins og CDN
+
+Undtag guidernes adresser, fx `/om-teknik/` og `/ledsageteknik/`, fra sidecache i cache-plugins (WP Rocket, LiteSpeed, W3 Total Cache …) og CDN. Gælder især `…/sw.js`. Ellers får brugerne ikke nye versioner. Pluginet sætter selv `DONOTCACHEPAGE` og `Cache-Control: no-cache`, men ikke alle cache-lag respekterer det.
+
+---
+
+## Teknik
+
+| Fil | Indhold |
+|---|---|
+| `includes/post-type.php` | Post typen `ibos_guide_page` (hierarkisk), metabokse, gem, listevisning |
+| `includes/guide.php` | Indstillinger, sidetræ, adresser, version, tilgængelighedstjek |
+| `includes/router.php` | Rewrite-regel pr. guide; serverer sider, `sw.js`, manifest, søgeindeks og ikoner |
+| `includes/render.php` | HTML-skabeloner (brødkrummer, menu, forrige/næste, søgning, installation), manifest, service worker |
+| `includes/icons.php` | App-ikoner i alle størrelser fra det valgte billede (GD) |
+| `includes/importer.php` | Trinvis import af `import/*.json` med billeder fra GitHub |
+| `assets/` | CSS i IBOS-stil, JavaScript, service worker-skabelon, QR-kode-bibliotek, standardikoner |
+
+**Offline:** service workeren gemmer alle sider, søgeindekset og billederne i den størrelse, der bruges i indholdet ("large"). Hver guide har sit eget versionsnummer, der hæves ved hver redigering.
+
+### Udvikling
+
+```bash
+npm install
+```
+```bash
+node tools/export-guide.mjs ../O-og-M om-teknik rpaasch/O-og-M main '#00628b'
+```
+```bash
+node tools/export-guide.mjs ../ledsageteknik ledsageteknik rpaasch/ledsageteknik main '#00656c'
+```
+```bash
+npm run zip
+```
+
+`export-guide.mjs` omsætter en Markdown-guide (`content/` + `site.config.json`) til WordPress-blokke i `import/<nøgle>.json`. `npm run zip` pakker `ibos-guides.zip`.
+
+---
+
+## Tjekliste før brug på ibos.dk
+
+- [ ] Installér først på et testsite eller en staging-kopi.
+- [ ] Importér begge guides, og åbn dem på en iPhone og en Android-telefon.
+- [ ] VoiceOver og TalkBack: overskrifter, landmarks, menu, forrige/næste og søgning.
+- [ ] Installér appen på hjemmeskærmen, og test i flytilstand.
+- [ ] Ret en side, og tjek at "Ny version klar" vises.
+- [ ] Undtag adresserne fra cache.

@@ -1,0 +1,18 @@
+{
+  "name": "ibos-guides",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "WordPress-plugin til tilgængelige guide-apps (PWA) – udviklingsværktøjer.",
+  "scripts": {
+    "export": "node tools/export-guide.mjs",
+    "zip": "node tools/zip.mjs"
+  },
+  "license": "GPL-2.0-or-later",
+  "dependencies": {
+    "archiver": "^7.0.1",
+    "gray-matter": "^4.0.3",
+    "markdown-it": "^14.3.3",
+    "sharp": "^0.33.5"
+  }
+}

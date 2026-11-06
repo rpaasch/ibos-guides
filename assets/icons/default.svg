@@ -1,0 +1,10 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <!-- Standardikon: opslået bog (guide). Motivet holdes inden for den sikre zone. -->
+  <rect width="512" height="512" fill="#00656c"/>
+  <g fill="none" stroke="#ffffff" stroke-width="22" stroke-linejoin="round" stroke-linecap="round">
+    <path d="M256 170 C215 140 160 136 120 146 L120 356 C160 346 215 350 256 380 Z"/>
+    <path d="M256 170 C297 140 352 136 392 146 L392 356 C352 346 297 350 256 380 Z"/>
+    <path d="M256 170 L256 380"/>
+  </g>
+  <circle cx="256" cy="128" r="10" fill="#ef7d00"/>
+</svg>
