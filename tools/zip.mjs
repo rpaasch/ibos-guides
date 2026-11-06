@@ -4,7 +4,7 @@ import fs from 'node:fs';
 import path from 'node:path';
 import crypto from 'node:crypto';
 import { execFileSync } from 'node:child_process';
-import archiver from 'archiver';
+import { ZipArchive } from 'archiver';
 
 const ROOT = path.resolve(path.dirname(new URL(import.meta.url).pathname), '..');
 const OUT = path.join(ROOT, 'ibos-guides.zip');
@@ -15,7 +15,7 @@ const files = execFileSync('git', ['-C', ROOT, 'ls-tree', '-r', '--name-only', r
 const date = new Date('2026-01-01T00:00:00Z');
 fs.rmSync(OUT, { force: true });
 const out = fs.createWriteStream(OUT);
-const zip = archiver('zip', { zlib: { level: 9 } });
+const zip = new ZipArchive({ zlib: { level: 9 } });
 zip.pipe(out);
 for (const f of files) {
   const buf = execFileSync('git', ['-C', ROOT, 'show', `${ref}:${f}`], { maxBuffer: 64 * 1024 * 1024 });
