@@ -63,12 +63,12 @@ self.addEventListener('message', (event) => {
   if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
 });
 
-// Findes appen stadig? Tjekkes i baggrunden (højst hvert 10. minut), når siderne vises fra
+// Findes appen stadig? Tjekkes i baggrunden (højst hvert minut), når siderne vises fra
 // cachen. Svarer serveren 404/410 eller sender videre et andet sted hen (plugin deaktiveret,
 // guide gjort privat/slettet, domæne flyttet), fjernes appen fra enheden.
 let lastCheck = 0;
 async function checkStillPublished() {
-  if (Date.now() - lastCheck < 10 * 60 * 1000) return;
+  if (Date.now() - lastCheck < 60 * 1000) return;
   lastCheck = Date.now();
   try {
     const res = await fetch(SCOPE + 'manifest.webmanifest', { cache: 'no-store', credentials: 'omit', redirect: 'manual' });

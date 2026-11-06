@@ -378,7 +378,7 @@ function ibos_guides_collect( $guide ) {
 	}
 	try {
 		$data = ibos_guides_build_collect( $guide, $current );
-		set_transient( $key, $data, WEEK_IN_SECONDS );
+		set_transient( $key, $data, DAY_IN_SECONDS );
 	} finally {
 		if ( $own ) {
 			delete_option( $lock );
@@ -401,8 +401,18 @@ function ibos_guides_collect( $guide ) {
 function ibos_guides_build_collect( $guide, $version ) {
 	$prev_user = get_current_user_id();
 	wp_set_current_user( 0 );
+	// Ingen udgående HTTP-kald (oEmbed/auto-embed) mens den fælles cache bygges – opbygningen
+	// kan udløses af en anonym besøgende, og serveren skal ikke kunne bringes til at kalde
+	// vilkårlige adresser på den måde. Allerede cachede embeds bruges stadig.
+	$no_fetch = function () {
+		return '';
+	};
+	add_filter( 'pre_oembed_result', $no_fetch, 1 );
+	add_filter( 'embed_oembed_discover', '__return_false', 1 );
 	$tree   = ibos_guides_tree( $guide->ID );
 	$order  = ibos_guides_order( $guide->ID );
+	$hash   = hash_init( 'md5' );
+	hash_update( $hash, wp_json_encode( ibos_guides_settings( $guide ) ) . get_the_title( $guide ) );
 	$index  = array();
 	$images = array();
 	$pages  = array();
@@ -412,6 +422,7 @@ function ibos_guides_build_collect( $guide, $version ) {
 			$p       = $tree['posts'][ $id ];
 			$pages[] = ibos_guides_path( $id, $guide->ID );
 			$html    = ibos_guides_content( $p, false );
+			hash_update( $hash, $id . '|' . get_the_title( $p ) . '|' . ibos_guides_menu_title( $p ) . '|' . $p->post_excerpt . '|' . $html );
 			if ( preg_match_all( '/<img\b[^>]*\bsrc="([^"]+)"/i', $html, $m ) ) {
 				foreach ( $m[1] as $src ) {
 					$src = html_entity_decode( $src );
@@ -430,15 +441,19 @@ function ibos_guides_build_collect( $guide, $version ) {
 			);
 		}
 	} finally {
+		remove_filter( 'pre_oembed_result', $no_fetch, 1 );
+		remove_filter( 'embed_oembed_discover', '__return_false', 1 );
 		wp_set_current_user( $prev_user );
 	}
 	$images = array_keys( $images );
+	hash_update( $hash, wp_json_encode( array( $guide->ID, $images, $pages ) ) );
 	return array(
 		'v'      => $version,
 		'index'  => $index,
 		'images' => $images,
 		'pages'  => $pages,
-		'hash'   => md5( wp_json_encode( array( $guide->ID, $index, $images, $pages ) ) ),
+		// Hash af alt, der vises: bestemmer service workerens version (ny version kun ved reel ændring).
+		'hash'   => hash_final( $hash ),
 	);
 }
 
@@ -479,7 +494,7 @@ function ibos_guides_service_worker( $guide ) {
 	$optional = array_values( array_diff( array_unique( array_merge( $optional, $data['images'] ) ), $critical ) );
 	// Versionen afhænger af guide, indhold, farve og plugin – så en ny guide på en genbrugt
 	// adresse eller ændret indhold altid giver en ny service worker.
-	$version = ibos_guides_version( $guide ) . '-' . substr( md5( $guide->ID . '|' . $data['hash'] . '|' . implode( '|', $critical ) . '|' . implode( '|', $optional ) . '|' . ibos_guides_settings( $guide )['color'] ), 0, 12 );
+	$version = IBOS_GUIDES_VERSION . '-' . substr( md5( $guide->ID . '|' . $data['hash'] . '|' . implode( '|', $critical ) . '|' . implode( '|', $optional ) ), 0, 12 );
 	// Stier uden for appens adresse, som appen bruger (uploads og pluginets filer) – fra
 	// WordPress selv, så det også virker i undermapper og med flyttet wp-content.
 	$up     = wp_upload_dir( null, false );

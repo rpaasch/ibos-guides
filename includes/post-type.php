@@ -445,6 +445,75 @@ function ibos_guides_on_delete( $id, $post ) {
 	}
 }
 add_action( 'edit_attachment', 'ibos_guides_bump_all' );
+
+// Guide-sider kan vise andet indhold via dynamiske blokke (fx Seneste indlæg, genbrugelige
+// blokke, navigation). Ændres det, skal søgeindeks og offline-liste bygges igen – ellers kan
+// fx et indlæg, der er gjort privat, blive liggende i det offentlige søgeindeks.
+add_action( 'transition_post_status', 'ibos_guides_on_other_content', 10, 3 );
+add_action( 'post_updated', 'ibos_guides_on_other_update', 10, 3 );
+add_action( 'deleted_post', 'ibos_guides_on_other_delete', 10, 2 );
+function ibos_guides_other_types() {
+	return (array) apply_filters( 'ibos_guides_dependent_post_types', array( 'post', 'page', 'wp_block', 'wp_navigation', 'wp_template_part', 'wp_template', 'attachment' ) );
+}
+function ibos_guides_on_other_content( $new, $old, $post ) {
+	if ( $new !== $old && in_array( $post->post_type, ibos_guides_other_types(), true ) && ibos_guides_routes() ) {
+		ibos_guides_bump();
+	}
+}
+function ibos_guides_on_other_update( $id, $after, $before ) {
+	if ( in_array( $after->post_type, ibos_guides_other_types(), true ) && ibos_guides_routes() ) {
+		ibos_guides_bump();
+	}
+}
+function ibos_guides_on_other_delete( $id, $post ) {
+	if ( $post && in_array( $post->post_type, ibos_guides_other_types(), true ) && ibos_guides_routes() ) {
+		ibos_guides_bump();
+	}
+}
+
+/* ---------------------------------------------------------------------------
+ * Billeder knyttet til guide-sider
+ *
+ * WordPress viser ellers titel, alt-tekst og beskrivelse af vedhæftede billeder via REST og
+ * "vedhæftningssider" – også for billeder på guide-sider, der ikke er offentlige (kladder,
+ * private, adgangskodebeskyttede eller under en kladde). For andre end redaktører skjules
+ * guide-billeder derfor i REST, og vedhæftningssider sender videre til selve filen.
+ * ------------------------------------------------------------------------- */
+
+function ibos_guides_is_guide_attachment( $att ) {
+	$att = get_post( $att );
+	return $att && 'attachment' === $att->post_type && $att->post_parent && IBOS_GUIDES_CPT === get_post_type( $att->post_parent );
+}
+
+add_filter( 'rest_attachment_query', 'ibos_guides_rest_attachment_query' );
+function ibos_guides_rest_attachment_query( $args ) {
+	if ( ! current_user_can( 'edit_pages' ) ) {
+		$ids = get_posts( array( 'post_type' => IBOS_GUIDES_CPT, 'post_status' => 'any', 'posts_per_page' => -1, 'fields' => 'ids' ) );
+		if ( $ids ) {
+			$args['post_parent__not_in'] = array_merge( isset( $args['post_parent__not_in'] ) ? (array) $args['post_parent__not_in'] : array(), $ids );
+		}
+	}
+	return $args;
+}
+
+add_filter( 'rest_pre_dispatch', 'ibos_guides_rest_media_guard', 10, 3 );
+function ibos_guides_rest_media_guard( $result, $server, $request ) {
+	if ( preg_match( '#^/wp/v2/media/(\d+)#i', (string) $request->get_route(), $m ) && ibos_guides_is_guide_attachment( (int) $m[1] ) && ! current_user_can( 'edit_pages' ) ) {
+		return new WP_Error( 'rest_forbidden', __( 'Ingen adgang.', 'ibos-guides' ), array( 'status' => rest_authorization_required_code() ) );
+	}
+	return $result;
+}
+
+add_action( 'template_redirect', 'ibos_guides_attachment_redirect', 1 );
+function ibos_guides_attachment_redirect() {
+	if ( is_attachment() && ibos_guides_is_guide_attachment( get_queried_object_id() ) && ! current_user_can( 'edit_pages' ) ) {
+		$url = wp_get_attachment_url( get_queried_object_id() );
+		if ( $url ) {
+			wp_safe_redirect( $url, 301 );
+			exit;
+		}
+	}
+}
 function ibos_guides_bump_all() {
 	ibos_guides_bump();
 }
