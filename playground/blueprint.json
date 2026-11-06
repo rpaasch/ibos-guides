@@ -1,0 +1,21 @@
+{
+  "$schema": "https://playground.wordpress.net/blueprint-schema.json",
+  "meta": {
+    "title": "IBOS Guides – prøv pluginet",
+    "description": "WordPress med IBOS Guides installeret. Gå til Guides → Importér for at hente O&M-teknik eller Ledsageteknik.",
+    "author": "rpaasch"
+  },
+  "landingPage": "/wp-admin/edit.php?post_type=ibos_guide_page&page=ibos-guides-import",
+  "preferredVersions": { "php": "8.3", "wp": "latest" },
+  "features": { "networking": true },
+  "login": true,
+  "steps": [
+    { "step": "setSiteLanguage", "language": "da_DK" },
+    { "step": "setSiteOptions", "options": { "blogname": "IBOS Guides – test", "permalink_structure": "/%postname%/" } },
+    {
+      "step": "installPlugin",
+      "pluginData": { "resource": "url", "url": "https://raw.githubusercontent.com/rpaasch/ibos-guides/claude/wizardly-cray-zt4cmk/ibos-guides.zip" },
+      "options": { "activate": true }
+    }
+  ]
+}
