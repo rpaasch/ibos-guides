@@ -11,10 +11,10 @@ Et WordPress-plugin til tilgængelige guide-apps (PWA), fx **O&M-teknik** og **L
 ## Installation
 
 1. **Plugins → Tilføj nyt → Upload plugin**, vælg `ibos-guides.zip`, tryk **Installér nu** og derefter **Aktivér**.
-2. Gå til **Guides → Importér**, og tryk **Importér O&M-teknik** og/eller **Importér Ledsageteknik**.
+2. Gå til **Guides → Importér**. Skriv den ønskede adresse for hver guide (fx `guides/om-teknik` eller `o-og-m`), og tryk **Importér O&M-teknik** og/eller **Importér Ledsageteknik**. Adresser, som sitet allerede bruger, afvises.
    - Billederne hentes fra GitHub (`raw.githubusercontent.com`) og lægges i mediebiblioteket med deres alt-tekster.
    - O&M-teknik har 252 billeder og tager et par minutter. Lad siden være åben imens. Afbrydes importen, fortsætter den, hvor den slap, når du trykker igen.
-3. Appen ligger nu på fx `https://ibos.dk/om-teknik/` og `https://ibos.dk/ledsageteknik/`.
+3. Appen ligger nu på den valgte adresse, fx `https://ibos.dk/guides/om-teknik/`. Adressen kan ændres senere under App-indstillinger (brugere, der har installeret appen, skal så installere den igen).
 
 **Krav:**
 - HTTPS

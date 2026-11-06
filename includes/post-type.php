@@ -277,6 +277,20 @@ function ibos_guides_slug_problem( $slug, $post_id ) {
 	if ( get_page_by_path( $slug, OBJECT, array( 'page', 'post' ) ) || get_page_by_path( $first, OBJECT, array( 'page', 'post' ) ) ) {
 		return __( 'Der findes allerede en side eller et indlæg på adressen. Den blev ikke gemt, så sitets indhold ikke bliver skjult. Vælg en anden adresse.', 'ibos-guides' );
 	}
+	// Gamle adresser, som WordPress sender videre til en side, der har skiftet adresse.
+	$old = get_posts(
+		array(
+			'post_type'      => 'any',
+			'post_status'    => 'publish',
+			'meta_key'       => '_wp_old_slug', // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_key
+			'meta_value'     => $first, // phpcs:ignore WordPress.DB.SlowDBQuery.slow_db_query_meta_value
+			'posts_per_page' => 1,
+			'fields'         => 'ids',
+		)
+	);
+	if ( $old ) {
+		return __( 'Adressen er en tidligere adresse for en side på sitet og sender i dag videre dertil. Vælg en anden.', 'ibos-guides' );
+	}
 	// Andre guides (også kladder): samme adresse, eller den ene adresse ligger under den anden.
 	$others = get_posts(
 		array(

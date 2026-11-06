@@ -2,7 +2,7 @@
 /**
  * Plugin Name:       IBOS Guides
  * Description:       Tilgængelige guide-apps (PWA) redigeret som almindelige sider i WordPress. Hver guide får sin egen adresse, kan installeres på hjemmeskærmen og virker uden internet.
- * Version:           1.1.0
+ * Version:           1.1.1
  * Requires at least: 6.2
  * Requires PHP:      7.4
  * Author:            IBOS – Instituttet for Blinde og Svagsynede
@@ -15,7 +15,7 @@
 
 defined( 'ABSPATH' ) || exit;
 
-define( 'IBOS_GUIDES_VERSION', '1.1.0' );
+define( 'IBOS_GUIDES_VERSION', '1.1.1' );
 define( 'IBOS_GUIDES_FILE', __FILE__ );
 define( 'IBOS_GUIDES_DIR', __DIR__ );
 define( 'IBOS_GUIDES_CPT', 'ibos_guide_page' );
