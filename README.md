@@ -42,7 +42,7 @@ Alt foregår under menupunktet **Guides**.
 - **Tilgængelighedstjek:** boksen af samme navn og kolonnen **Tjek** i listen viser fx manglende alt-tekster og spring i overskriftsniveauer.
 
 ### App-indstillinger
-Findes på guidens øverste side i boksen **App-indstillinger** under editoren (åbn "Meta Boxes" nederst, hvis boksen er lukket). Guidens **titel** er appens navn, og teksten i editoren er appens forside.
+Findes på guidens øverste side i boksen **App-indstillinger** øverst i panelet til højre i editoren. Guidens **titel** er appens navn, og teksten i editoren er appens forside.
 
 | Indstilling | Forklaring |
 |---|---|
