@@ -25,8 +25,9 @@ function ibos_guides_asset( $file ) {
  */
 function ibos_guides_content( $post ) {
 	static $cache = array();
-	if ( isset( $cache[ $post->ID ] ) ) {
-		return $cache[ $post->ID ];
+	$key          = $post->ID . ':' . get_current_user_id();
+	if ( isset( $cache[ $key ] ) ) {
+		return $cache[ $key ];
 	}
 	$prev            = isset( $GLOBALS['post'] ) ? $GLOBALS['post'] : null;
 	$GLOBALS['post'] = $post; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
@@ -38,7 +39,7 @@ function ibos_guides_content( $post ) {
 	if ( $prev ) {
 		setup_postdata( $prev );
 	}
-	$cache[ $post->ID ] = $html;
+	$cache[ $key ] = $html;
 	return $html;
 }
 
@@ -360,6 +361,11 @@ function ibos_guides_collect( $guide ) {
 	if ( is_array( $data ) && isset( $data['v'] ) && ibos_guides_version( $guide ) === $data['v'] ) {
 		return $data;
 	}
+	// Søgeindeks og offline-liste deles af alle besøgende og caches. De skal derfor altid
+	// bygges som en anonym besøgende – ellers kan indhold, som kun vises for indloggede
+	// (fx via shortcodes eller blokke med synlighedsregler), havne i det offentlige indeks.
+	$prev_user = get_current_user_id();
+	wp_set_current_user( 0 );
 	$tree   = ibos_guides_tree( $guide->ID );
 	$index  = array();
 	$images = array();
@@ -379,12 +385,13 @@ function ibos_guides_collect( $guide ) {
 			continue;
 		}
 		$index[] = array(
-			't' => get_the_title( $p ),
-			's' => ( (int) $p->post_parent && (int) $p->post_parent !== (int) $guide->ID ) ? get_the_title( $p->post_parent ) : '',
+			't' => html_entity_decode( get_the_title( $p ), ENT_QUOTES, 'UTF-8' ),
+			's' => ( (int) $p->post_parent && (int) $p->post_parent !== (int) $guide->ID ) ? html_entity_decode( get_the_title( $p->post_parent ), ENT_QUOTES, 'UTF-8' ) : '',
 			'u' => ibos_guides_path( $id, $guide->ID ),
 			'x' => trim( preg_replace( '/\s+/u', ' ', html_entity_decode( wp_strip_all_tags( $html ), ENT_QUOTES, 'UTF-8' ) ) ),
 		);
 	}
+	wp_set_current_user( $prev_user );
 	$data = array(
 		'v'      => ibos_guides_version( $guide ),
 		'index'  => $index,
@@ -420,9 +427,13 @@ function ibos_guides_service_worker( $guide ) {
 	$precache = array_values( array_unique( array_merge( $precache, $data['images'] ) ) );
 	$version  = ibos_guides_version( $guide ) . '-' . substr( md5( implode( '|', $precache ) . ibos_guides_settings( $guide )['color'] ), 0, 8 );
 	$tpl      = file_get_contents( IBOS_GUIDES_DIR . '/assets/sw.js' ); // phpcs:ignore WordPress.WP.AlternativeFunctions.file_get_contents_file_get_contents
-	return str_replace(
-		array( '__VERSION__', '__PRECACHE__' ),
-		array( esc_js( $version ), wp_json_encode( $precache, JSON_UNESCAPED_SLASHES ) ),
-		$tpl
+	// strtr erstatter i én omgang, så en pladsholder inde i en indsat værdi ikke erstattes igen.
+	return strtr(
+		$tpl,
+		array(
+			'__VERSION__'  => esc_js( $version ),
+			'__PRECACHE__' => wp_json_encode( $precache, JSON_UNESCAPED_SLASHES ),
+			'__SCOPE__'    => esc_js( $base ),
+		)
 	);
 }

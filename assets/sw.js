@@ -3,6 +3,10 @@
 const VERSION = '__VERSION__';
 const PRECACHE = __PRECACHE__;
 const SCOPE = self.registration.scope; // fx https://eksempel.dk/om-teknik/
+// Sikkerhed: arbejd kun, hvis service workeren er registreret præcis på guidens adresse.
+// Er den registreret med et bredere scope (fx hele sitet), griber den ikke ind i noget.
+const EXPECTED_SCOPE = '__SCOPE__';
+const ACTIVE = SCOPE === EXPECTED_SCOPE;
 const PREFIX = 'ibos-guides:' + new URL(SCOPE).pathname + ':';
 const ORIGIN = new URL(SCOPE).origin;
 // Filer uden for appens adresse, som appen bruger (billeder og pluginets CSS/JS).
@@ -10,6 +14,7 @@ const SHARED = ['/wp-content/uploads/', '/wp-content/plugins/ibos-guides/'];
 const CACHE = PREFIX + VERSION;
 
 self.addEventListener('install', (event) => {
+  if (!ACTIVE) return;
   event.waitUntil((async () => {
     const cache = await caches.open(CACHE);
     // cache: 'reload' går uden om browserens HTTP-cache, så vi får den nye version.
@@ -27,6 +32,7 @@ self.addEventListener('install', (event) => {
 });
 
 self.addEventListener('activate', (event) => {
+  if (!ACTIVE) return;
   event.waitUntil((async () => {
     for (const key of await caches.keys()) {
       if (key.startsWith(PREFIX) && key !== CACHE) await caches.delete(key);
@@ -50,7 +56,7 @@ function normalize(url) {
 
 self.addEventListener('fetch', (event) => {
   const req = event.request;
-  if (req.method !== 'GET') return;
+  if (!ACTIVE || req.method !== 'GET') return;
   const url = new URL(req.url);
   const inScope = req.url.startsWith(SCOPE);
   const shared = url.origin === ORIGIN && SHARED.some((p) => url.pathname.includes(p));

@@ -46,7 +46,8 @@ function ibos_guides_settings( $guide ) {
 			$s[ $key ] = $v;
 		}
 	}
-	$s['slug']       = ibos_guides_clean_slug( $s['slug'] ? $s['slug'] : $guide->post_name );
+	// Adressen skal være gemt eksplicit (og godkendt ved gem). Ingen adresse = ingen app.
+	$s['slug']       = ibos_guides_clean_slug( $s['slug'] );
 	$s['short_name'] = $s['short_name'] ? $s['short_name'] : $guide->post_title;
 	$s['icon_id']    = (int) $s['icon_id'];
 	$s['logo_id']    = (int) $s['logo_id'];
@@ -93,15 +94,41 @@ function ibos_guides_root( $post ) {
  * @return WP_Post[]
  */
 function ibos_guides_all() {
-	return get_posts(
-		array(
-			'post_type'      => IBOS_GUIDES_CPT,
-			'post_parent'    => 0,
-			'post_status'    => 'publish',
-			'posts_per_page' => -1,
-			'orderby'        => array( 'menu_order' => 'ASC', 'title' => 'ASC' ),
+	return array_values(
+		array_filter(
+			get_posts(
+				array(
+					'post_type'      => IBOS_GUIDES_CPT,
+					'post_parent'    => 0,
+					'post_status'    => 'publish',
+					'posts_per_page' => -1,
+					'orderby'        => array( 'menu_order' => 'ASC', 'title' => 'ASC' ),
+				)
+			),
+			'ibos_guides_is_guide'
 		)
 	);
+}
+
+/**
+ * Er siden en udgivet, offentlig guide (app)?
+ *
+ * Kun sider på øverste niveau, hvis app-indstillinger er gemt (eller som er importeret), tæller.
+ * Det forhindrer, at kapitler, der mister deres forælder (fx når en guide slettes permanent),
+ * pludselig bliver offentlige apps på adresser, der kan overskygge sitets egne sider.
+ *
+ * @param int|WP_Post $post Side.
+ * @return bool
+ */
+function ibos_guides_is_guide( $post ) {
+	$post = get_post( $post );
+	return $post
+		&& IBOS_GUIDES_CPT === $post->post_type
+		&& ! $post->post_parent
+		&& 'publish' === $post->post_status
+		&& '' === (string) $post->post_password
+		&& metadata_exists( 'post', $post->ID, '_ibg_color' )
+		&& '' !== ibos_guides_settings( $post )['slug'];
 }
 
 /**
@@ -164,12 +191,27 @@ function ibos_guides_tree( $guide_id ) {
 			'sort_column' => 'menu_order,post_title',
 		)
 	);
-	$posts    = array( $guide_id => get_post( $guide_id ) );
+	$by_id    = array();
 	$children = array();
 	foreach ( $pages as $p ) {
-		$posts[ $p->ID ]                    = $p;
+		// Adgangskodebeskyttede sider (og deres undersider) vises aldrig i appen.
+		if ( '' !== (string) $p->post_password ) {
+			continue;
+		}
+		$by_id[ $p->ID ]                     = $p;
 		$children[ (int) $p->post_parent ][] = (int) $p->ID;
 	}
+	// Behold kun sider, der kan nås fra roden via udgivne, offentlige forældre.
+	$posts = array( $guide_id => get_post( $guide_id ) );
+	$queue = array( (int) $guide_id );
+	while ( $queue ) {
+		$id = array_shift( $queue );
+		foreach ( isset( $children[ $id ] ) ? $children[ $id ] : array() as $c ) {
+			$posts[ $c ] = $by_id[ $c ];
+			$queue[]     = $c;
+		}
+	}
+	$children = array_intersect_key( $children, $posts );
 	foreach ( $children as &$list ) {
 		usort(
 			$list,

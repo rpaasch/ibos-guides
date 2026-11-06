@@ -46,10 +46,26 @@ function ibos_guides_parse_request( $wp ) {
 	}
 	$guide = get_post( (int) $wp->query_vars['ibos_guide'] );
 	$path  = isset( $wp->query_vars['ibos_guide_path'] ) ? (string) $wp->query_vars['ibos_guide_path'] : '';
-	if ( ! $guide || IBOS_GUIDES_CPT !== $guide->post_type || $guide->post_parent || 'publish' !== $guide->post_status || ! ibos_guides_dispatch( $guide, $path ) ) {
+	if ( ! ibos_guides_is_guide( $guide ) || ! ibos_guides_request_in_base( $guide ) || ! ibos_guides_dispatch( $guide, $path ) ) {
 		unset( $wp->query_vars['ibos_guide'], $wp->query_vars['ibos_guide_path'] );
 		$wp->query_vars['error'] = '404';
 	}
+}
+
+/**
+ * Kommer forespørgslen faktisk fra guidens egen adresse?
+ *
+ * Query-variablerne er offentlige, så uden dette tjek kunne fx "/?ibos_guide=12&ibos_guide_path=sw.js"
+ * servere appens service worker fra sitets rod, hvor den ville kunne styre hele sitet.
+ *
+ * @param WP_Post $guide Rod-side.
+ * @return bool
+ */
+function ibos_guides_request_in_base( $guide ) {
+	$base = (string) wp_parse_url( ibos_guides_base_url( $guide ), PHP_URL_PATH );
+	$req  = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_parse_url( wp_unslash( $_SERVER['REQUEST_URI'] ), PHP_URL_PATH ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- kun sammenlignet.
+	$req  = rawurldecode( $req );
+	return '' !== $base && ( 0 === strpos( $req, $base ) || rtrim( $base, '/' ) === $req );
 }
 
 /**
@@ -65,10 +81,17 @@ function ibos_guides_headers( $type, $cache = 'no-cache' ) {
 	while ( ob_get_level() > 0 ) {
 		ob_end_clean();
 	}
+	// HTML til en logget ind bruger må ikke gemmes i fælles caches (CDN/proxy).
+	if ( 0 === strpos( $type, 'text/html' ) && is_user_logged_in() ) {
+		$cache = 'private, ' . $cache;
+	}
 	status_header( 200 );
 	header( 'Content-Type: ' . $type );
 	header( 'Cache-Control: ' . $cache );
 	header( 'X-Content-Type-Options: nosniff' );
+	header( 'X-Frame-Options: SAMEORIGIN' );
+	header( "Content-Security-Policy: frame-ancestors 'self'" );
+	header( 'Referrer-Policy: strict-origin-when-cross-origin' );
 }
 
 /**

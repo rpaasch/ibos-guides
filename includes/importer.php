@@ -46,11 +46,11 @@ function ibos_guides_imported( $key ) {
 
 add_action( 'admin_menu', 'ibos_guides_import_menu' );
 function ibos_guides_import_menu() {
-	add_submenu_page( 'edit.php?post_type=' . IBOS_GUIDES_CPT, __( 'Importér guide', 'ibos-guides' ), __( 'Importér', 'ibos-guides' ), 'edit_pages', 'ibos-guides-import', 'ibos_guides_import_page' );
+	add_submenu_page( 'edit.php?post_type=' . IBOS_GUIDES_CPT, __( 'Importér guide', 'ibos-guides' ), __( 'Importér', 'ibos-guides' ), 'publish_pages', 'ibos-guides-import', 'ibos_guides_import_page' );
 }
 
 function ibos_guides_import_page() {
-	if ( ! current_user_can( 'edit_pages' ) || ! current_user_can( 'upload_files' ) ) {
+	if ( ! current_user_can( 'publish_pages' ) || ! current_user_can( 'upload_files' ) ) {
 		wp_die( esc_html__( 'Du har ikke adgang til denne side.', 'ibos-guides' ) );
 	}
 	$packages = ibos_guides_import_packages();
@@ -146,7 +146,7 @@ function ibos_guides_import_page() {
 add_action( 'wp_ajax_ibos_guides_import', 'ibos_guides_import_ajax' );
 function ibos_guides_import_ajax() {
 	check_ajax_referer( 'ibos_guides_import' );
-	if ( ! current_user_can( 'edit_pages' ) || ! current_user_can( 'upload_files' ) ) {
+	if ( ! current_user_can( 'publish_pages' ) || ! current_user_can( 'upload_files' ) ) {
 		wp_send_json_error( array( 'message' => __( 'Ingen adgang.', 'ibos-guides' ) ), 403 );
 	}
 	$key      = isset( $_POST['key'] ) ? sanitize_key( wp_unslash( $_POST['key'] ) ) : '';
@@ -207,6 +207,12 @@ function ibos_guides_import_step( $pkg ) {
 			);
 			if ( is_wp_error( $root_id ) ) {
 				throw new Exception( $root_id->get_error_message() );
+			}
+			// Samme adressetjek som ved manuelt gem: en eksisterende side må ikke blive skjult.
+			$problem = ibos_guides_slug_problem( $g['slug'], $root_id );
+			if ( $problem ) {
+				update_post_meta( $root_id, '_ibg_slug', '' );
+				update_post_meta( $root_id, '_ibg_slug_error', $problem );
 			}
 			$root = get_post( $root_id );
 		}
@@ -321,6 +327,15 @@ function ibos_guides_import_step( $pkg ) {
 	ibos_guides_refresh_routes();
 	update_option( 'ibos_guides_flush', 1 );
 	ibos_guides_bump( $state['map']['root'] );
+	if ( '' === ibos_guides_settings( $state['map']['root'] )['slug'] ) {
+		return array(
+			'progress' => 100,
+			'done'     => true,
+			'url'      => get_edit_post_link( $state['map']['root'], 'raw' ),
+			/* translators: %s: guidens navn */
+			'message'  => sprintf( __( '%s er importeret, men adressen var optaget. Vælg en anden adresse i App-indstillinger og gem.', 'ibos-guides' ), $pkg['guide']['title'] ),
+		);
+	}
 	return array(
 		'progress' => 100,
 		'done'     => true,

@@ -56,7 +56,10 @@ function ibos_guides_post_link( $link, $post ) {
 		return $link;
 	}
 	$root = ibos_guides_root( $post );
-	return $root ? ibos_guides_base_url( $root ) . ibos_guides_path( $post->ID, $root->ID ) : $link;
+	if ( ! $root || '' === ibos_guides_settings( $root )['slug'] ) {
+		return $link;
+	}
+	return ibos_guides_base_url( $root ) . ibos_guides_path( $post->ID, $root->ID );
 }
 
 /* ---------------------------------------------------------------------------
@@ -104,6 +107,7 @@ function ibos_guides_box_page( $post ) {
 		<label><input type="checkbox" name="ibg_hidden" value="1" <?php checked( $hidden ); ?>>
 		<?php esc_html_e( 'Skjul i menu, forrige/næste og søgning', 'ibos-guides' ); ?></label>
 	</p>
+	<p class="description"><?php esc_html_e( 'Bemærk: en skjult side kan stadig åbnes, hvis man kender adressen. Brug "Kladde" eller "Privat", hvis indholdet ikke må være offentligt.', 'ibos-guides' ); ?></p>
 	<p>
 		<label for="ibg-child-menu"><?php esc_html_e( 'Visning af undersider', 'ibos-guides' ); ?></label><br>
 		<select name="ibg_child_menu" id="ibg-child-menu">
@@ -118,7 +122,10 @@ function ibos_guides_box_page( $post ) {
 
 function ibos_guides_box_settings( $post ) {
 	$s        = ibos_guides_settings( $post );
-	$conflict = $s['slug'] ? get_page_by_path( $s['slug'] ) : null;
+	$conflict = null; // Konflikter afvises nu ved gem (se ibos_guides_slug_problem).
+	if ( '' === $s['slug'] ) {
+		$s['slug'] = ibos_guides_clean_slug( $post->post_name ? $post->post_name : sanitize_title( $post->post_title ) );
+	}
 	$contrast = ibos_guides_contrast( $s['color'], '#ffffff' );
 	wp_enqueue_media();
 	?>
@@ -130,6 +137,10 @@ function ibos_guides_box_settings( $post ) {
 				<input type="text" id="ibg-slug" name="ibg_slug" class="regular-text" value="<?php echo esc_attr( $s['slug'] ); ?>" aria-describedby="ibg-slug-help">
 				<code>/</code>
 				<p class="description" id="ibg-slug-help"><?php esc_html_e( 'Små bogstaver, tal og bindestreg. Ændres adressen, skal brugere installere appen igen.', 'ibos-guides' ); ?></p>
+				<?php $slug_error = get_post_meta( $post->ID, '_ibg_slug_error', true ); ?>
+				<?php if ( $slug_error ) : ?>
+					<p class="notice notice-error inline" style="padding:.5em"><?php echo esc_html( $slug_error ); ?></p>
+				<?php endif; ?>
 				<?php if ( $conflict ) : ?>
 					<p class="notice notice-warning inline" style="padding:.5em"><?php esc_html_e( 'Der findes en almindelig side med samme adresse. Appen vises i stedet for den.', 'ibos-guides' ); ?></p>
 				<?php endif; ?>
@@ -207,6 +218,45 @@ function ibos_guides_admin_assets( $hook ) {
  * Gem
  * ------------------------------------------------------------------------- */
 
+/**
+ * Er adressen problematisk? Returnerer en fejltekst eller ''.
+ *
+ * En guide-adresse overskygger alt, WordPress ellers ville vise på samme sti. Derfor afvises
+ * WordPress' egne stier og adresser, som allerede bruges af en side, et indlæg eller en anden guide.
+ *
+ * @param string $slug    Renset adresse.
+ * @param int    $post_id Guiden, der gemmes.
+ * @return string
+ */
+function ibos_guides_slug_problem( $slug, $post_id ) {
+	if ( '' === $slug ) {
+		return '';
+	}
+	$first    = strtok( $slug, '/' );
+	$reserved = array( 'wp-admin', 'wp-content', 'wp-includes', 'wp-json', 'wp-login', 'wp-sitemap', 'xmlrpc', 'feed', 'comments', 'category', 'tag', 'author', 'search', 'page', 'embed', 'attachment', 'trackback', 'type', 'date' );
+	foreach ( get_taxonomies( array( 'public' => true ), 'objects' ) as $tax ) {
+		if ( ! empty( $tax->rewrite['slug'] ) ) {
+			$reserved[] = $tax->rewrite['slug'];
+		}
+	}
+	foreach ( get_post_types( array( 'public' => true ), 'objects' ) as $pt ) {
+		if ( ! empty( $pt->rewrite['slug'] ) ) {
+			$reserved[] = $pt->rewrite['slug'];
+		}
+	}
+	if ( in_array( $first, $reserved, true ) ) {
+		return __( 'Adressen bruges af WordPress selv og blev ikke gemt. Vælg en anden.', 'ibos-guides' );
+	}
+	if ( get_page_by_path( $slug, OBJECT, array( 'page', 'post' ) ) || get_page_by_path( $first, OBJECT, array( 'page', 'post' ) ) ) {
+		return __( 'Der findes allerede en side eller et indlæg på adressen. Den blev ikke gemt, så sitets indhold ikke bliver skjult. Vælg en anden adresse.', 'ibos-guides' );
+	}
+	$routes = ibos_guides_routes();
+	if ( isset( $routes[ $slug ] ) && (int) $routes[ $slug ] !== (int) $post_id ) {
+		return __( 'En anden guide bruger allerede adressen. Vælg en anden.', 'ibos-guides' );
+	}
+	return '';
+}
+
 add_action( 'save_post_' . IBOS_GUIDES_CPT, 'ibos_guides_save', 10, 2 );
 function ibos_guides_save( $post_id, $post ) {
 	if ( wp_is_post_revision( $post_id ) || wp_is_post_autosave( $post_id ) ) {
@@ -221,11 +271,17 @@ function ibos_guides_save( $post_id, $post ) {
 
 		if ( ! $post->post_parent && isset( $_POST['ibg_slug'] ) ) {
 			$slug = ibos_guides_clean_slug( sanitize_text_field( wp_unslash( $_POST['ibg_slug'] ) ) );
-			$bad  = array( 'wp-admin', 'wp-content', 'wp-includes', 'wp-json', 'feed', 'comments' );
-			if ( in_array( strtok( $slug, '/' ), $bad, true ) ) {
-				$slug = '';
+			if ( '' === $slug ) {
+				$slug = ibos_guides_clean_slug( $post->post_name ? $post->post_name : sanitize_title( $post->post_title ) );
 			}
-			update_post_meta( $post_id, '_ibg_slug', $slug );
+			$error = ibos_guides_slug_problem( $slug, $post_id );
+			if ( $error ) {
+				// Behold den hidtidige adresse, og vis fejlen i metaboksen.
+				update_post_meta( $post_id, '_ibg_slug_error', $error );
+			} else {
+				delete_post_meta( $post_id, '_ibg_slug_error' );
+				update_post_meta( $post_id, '_ibg_slug', $slug );
+			}
 			update_post_meta( $post_id, '_ibg_short_name', sanitize_text_field( wp_unslash( isset( $_POST['ibg_short_name'] ) ? $_POST['ibg_short_name'] : '' ) ) );
 			$color = sanitize_hex_color( wp_unslash( isset( $_POST['ibg_color'] ) ? $_POST['ibg_color'] : '' ) );
 			update_post_meta( $post_id, '_ibg_color', $color ? $color : '#00656c' );
@@ -289,7 +345,9 @@ function ibos_guides_column( $col, $post_id ) {
 	$post = get_post( $post_id );
 	if ( 'ibg_guide' === $col ) {
 		$root = ibos_guides_root( $post );
-		if ( $root && (int) $root->ID === (int) $post_id ) {
+		if ( $root && (int) $root->ID === (int) $post_id && '' === ibos_guides_settings( $root )['slug'] ) {
+			echo '<strong>' . esc_html__( 'App', 'ibos-guides' ) . '</strong><br><span style="color:#b32d2e">' . esc_html__( 'Ingen godkendt adresse – se App-indstillinger', 'ibos-guides' ) . '</span>';
+		} elseif ( $root && (int) $root->ID === (int) $post_id ) {
 			$url = ibos_guides_base_url( $root );
 			echo '<strong>' . esc_html__( 'App', 'ibos-guides' ) . '</strong><br><a href="' . esc_url( $url ) . '">' . esc_html( wp_parse_url( $url, PHP_URL_PATH ) ) . '</a>';
 		} elseif ( $root ) {
