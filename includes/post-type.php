@@ -47,6 +47,23 @@ function ibos_guides_register_post_type() {
 }
 
 /* ---------------------------------------------------------------------------
+ * REST: kun for brugere, der må redigere guides.
+ *
+ * Blok-editoren bruger REST, men offentligheden skal kun se indhold via appen, som selv
+ * frasorterer kladder, private og adgangskodebeskyttede sider og sider under dem. Uden dette
+ * kunne fx udgivne undersider af en kladde-guide læses anonymt via /wp-json/wp/v2/ibos_guide_page.
+ * ------------------------------------------------------------------------- */
+
+add_filter( 'rest_pre_dispatch', 'ibos_guides_rest_guard', 10, 3 );
+function ibos_guides_rest_guard( $result, $server, $request ) {
+	$route = (string) $request->get_route();
+	if ( 0 === strpos( $route, '/wp/v2/' . IBOS_GUIDES_CPT ) && ! current_user_can( 'edit_pages' ) ) {
+		return new WP_Error( 'rest_forbidden', __( 'Guide-sider er kun tilgængelige for redaktører via REST.', 'ibos-guides' ), array( 'status' => rest_authorization_required_code() ) );
+	}
+	return $result;
+}
+
+/* ---------------------------------------------------------------------------
  * Visningslink: peg på appen i stedet for en almindelig WP-side.
  * ------------------------------------------------------------------------- */
 
@@ -122,7 +139,9 @@ function ibos_guides_box_page( $post ) {
 
 function ibos_guides_box_settings( $post ) {
 	$s        = ibos_guides_settings( $post );
-	$conflict = null; // Konflikter afvises nu ved gem (se ibos_guides_slug_problem).
+	// Konflikter afvises ved gem (ibos_guides_slug_problem). En side, der oprettes senere på
+	// samme adresse, opdages først her – derfor advares der stadig.
+	$conflict = $s['slug'] ? get_page_by_path( $s['slug'], OBJECT, array( 'page', 'post' ) ) : null;
 	if ( '' === $s['slug'] ) {
 		$s['slug'] = ibos_guides_clean_slug( $post->post_name ? $post->post_name : sanitize_title( $post->post_title ) );
 	}
@@ -233,7 +252,7 @@ function ibos_guides_slug_problem( $slug, $post_id ) {
 		return '';
 	}
 	$first    = strtok( $slug, '/' );
-	$reserved = array( 'wp-admin', 'wp-content', 'wp-includes', 'wp-json', 'wp-login', 'wp-sitemap', 'xmlrpc', 'feed', 'comments', 'category', 'tag', 'author', 'search', 'page', 'embed', 'attachment', 'trackback', 'type', 'date' );
+	$reserved = array( 'wp-admin', 'wp-content', 'wp-includes', 'wp-json', 'wp-login', 'wp-signup', 'wp-activate', 'wp-sitemap', 'xmlrpc', 'feed', 'comments', 'category', 'tag', 'author', 'search', 'page', 'embed', 'attachment', 'trackback', 'type', 'date', 'admin', 'login', 'logout', 'dashboard', 'register', 'signup', 'activate', 'sitemap', 'robots-txt', 'favicon-ico' );
 	foreach ( get_taxonomies( array( 'public' => true ), 'objects' ) as $tax ) {
 		if ( ! empty( $tax->rewrite['slug'] ) ) {
 			$reserved[] = $tax->rewrite['slug'];
@@ -250,9 +269,22 @@ function ibos_guides_slug_problem( $slug, $post_id ) {
 	if ( get_page_by_path( $slug, OBJECT, array( 'page', 'post' ) ) || get_page_by_path( $first, OBJECT, array( 'page', 'post' ) ) ) {
 		return __( 'Der findes allerede en side eller et indlæg på adressen. Den blev ikke gemt, så sitets indhold ikke bliver skjult. Vælg en anden adresse.', 'ibos-guides' );
 	}
-	$routes = ibos_guides_routes();
-	if ( isset( $routes[ $slug ] ) && (int) $routes[ $slug ] !== (int) $post_id ) {
-		return __( 'En anden guide bruger allerede adressen. Vælg en anden.', 'ibos-guides' );
+	// Andre guides (også kladder): samme adresse, eller den ene adresse ligger under den anden.
+	$others = get_posts(
+		array(
+			'post_type'      => IBOS_GUIDES_CPT,
+			'post_parent'    => 0,
+			'post_status'    => array( 'publish', 'draft', 'pending', 'private', 'future' ),
+			'posts_per_page' => -1,
+			'post__not_in'   => array( (int) $post_id ),
+			'fields'         => 'ids',
+		)
+	);
+	foreach ( $others as $oid ) {
+		$o = ibos_guides_clean_slug( get_post_meta( $oid, '_ibg_slug', true ) );
+		if ( '' !== $o && ( $o === $slug || 0 === strpos( $slug . '/', $o . '/' ) || 0 === strpos( $o . '/', $slug . '/' ) ) ) {
+			return __( 'En anden guide bruger allerede adressen (eller en adresse, der overlapper). Vælg en anden.', 'ibos-guides' );
+		}
 	}
 	return '';
 }
@@ -285,8 +317,14 @@ function ibos_guides_save( $post_id, $post ) {
 			update_post_meta( $post_id, '_ibg_short_name', sanitize_text_field( wp_unslash( isset( $_POST['ibg_short_name'] ) ? $_POST['ibg_short_name'] : '' ) ) );
 			$color = sanitize_hex_color( wp_unslash( isset( $_POST['ibg_color'] ) ? $_POST['ibg_color'] : '' ) );
 			update_post_meta( $post_id, '_ibg_color', $color ? $color : '#00656c' );
-			update_post_meta( $post_id, '_ibg_icon_id', absint( isset( $_POST['ibg_icon_id'] ) ? $_POST['ibg_icon_id'] : 0 ) );
-			update_post_meta( $post_id, '_ibg_logo_id', absint( isset( $_POST['ibg_logo_id'] ) ? $_POST['ibg_logo_id'] : 0 ) );
+			// Ikon og logo skal være billeder, som brugeren selv må se.
+			foreach ( array( 'icon_id', 'logo_id' ) as $key ) {
+				$att = absint( isset( $_POST[ 'ibg_' . $key ] ) ? $_POST[ 'ibg_' . $key ] : 0 );
+				if ( $att && ( ! wp_attachment_is_image( $att ) || ! current_user_can( 'read_post', $att ) ) ) {
+					$att = 0;
+				}
+				update_post_meta( $post_id, '_ibg_' . $key, $att );
+			}
 			update_post_meta( $post_id, '_ibg_publisher', sanitize_text_field( wp_unslash( isset( $_POST['ibg_publisher'] ) ? $_POST['ibg_publisher'] : '' ) ) );
 			update_post_meta( $post_id, '_ibg_colophon', sanitize_text_field( wp_unslash( isset( $_POST['ibg_colophon'] ) ? $_POST['ibg_colophon'] : '' ) ) );
 			$menu = sanitize_key( wp_unslash( isset( $_POST['ibg_menu'] ) ? $_POST['ibg_menu'] : 'tiles' ) );

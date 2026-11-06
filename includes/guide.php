@@ -154,7 +154,13 @@ function ibos_guides_refresh_routes() {
 			$routes[ $slug ] = (int) $g->ID;
 		}
 	}
-	ksort( $routes );
+	// Længste adresse først, så "a/b" matches før "a".
+	uksort(
+		$routes,
+		function ( $a, $b ) {
+			return strlen( $b ) - strlen( $a ) ?: strcmp( $a, $b );
+		}
+	);
 	if ( ibos_guides_routes() === $routes ) {
 		return false;
 	}

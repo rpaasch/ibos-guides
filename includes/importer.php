@@ -154,9 +154,24 @@ function ibos_guides_import_ajax() {
 	if ( ! isset( $packages[ $key ] ) ) {
 		wp_send_json_error( array( 'message' => __( 'Ukendt guide.', 'ibos-guides' ) ) );
 	}
+	$existing = ibos_guides_imported( $key );
+	if ( $existing && 'publish' === $existing->post_status && false === get_option( 'ibos_guides_import_' . $key ) ) {
+		wp_send_json_error( array( 'message' => __( 'Guiden er allerede importeret.', 'ibos-guides' ) ) );
+	}
+	// Lås: kun ét importskridt ad gangen pr. guide (fx hvis siden er åben i to faner).
+	$lock = 'ibos_guides_import_lock_' . $key;
+	if ( ! add_option( $lock, time(), '', false ) ) {
+		if ( time() - (int) get_option( $lock ) < 5 * MINUTE_IN_SECONDS ) {
+			wp_send_json_error( array( 'message' => __( 'Importen kører allerede i et andet vindue.', 'ibos-guides' ) ) );
+		}
+		update_option( $lock, time(), false ); // Forældet lås efter et nedbrud.
+	}
 	try {
-		wp_send_json_success( ibos_guides_import_step( $packages[ $key ] ) );
+		$result = ibos_guides_import_step( $packages[ $key ] );
+		delete_option( $lock );
+		wp_send_json_success( $result );
 	} catch ( Exception $e ) {
+		delete_option( $lock );
 		wp_send_json_error( array( 'message' => $e->getMessage() ) );
 	}
 }

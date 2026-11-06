@@ -41,11 +41,28 @@ function ibos_guides_query_vars( $vars ) {
 
 add_action( 'parse_request', 'ibos_guides_parse_request', 1 );
 function ibos_guides_parse_request( $wp ) {
-	if ( empty( $wp->query_vars['ibos_guide'] ) ) {
+	// Stol ikke på query-variablerne: WordPress lader ?ibos_guide=…&ibos_guide_path=… i
+	// URL'en overskrive rewrite-reglen. Guide og sti udledes derfor kun af den regel,
+	// der faktisk matchede adressen, og af selve stien.
+	if ( empty( $wp->matched_rule ) ) {
+		if ( isset( $wp->query_vars['ibos_guide'] ) || isset( $wp->query_vars['ibos_guide_path'] ) ) {
+			unset( $wp->query_vars['ibos_guide'], $wp->query_vars['ibos_guide_path'] );
+			$wp->query_vars['error'] = '404';
+		}
 		return;
 	}
-	$guide = get_post( (int) $wp->query_vars['ibos_guide'] );
-	$path  = isset( $wp->query_vars['ibos_guide_path'] ) ? (string) $wp->query_vars['ibos_guide_path'] : '';
+	$guide_id = 0;
+	foreach ( ibos_guides_routes() as $slug => $id ) {
+		if ( ibos_guides_rule_regex( $slug ) === $wp->matched_rule ) {
+			$guide_id = (int) $id;
+			$path     = preg_match( '#' . $wp->matched_rule . '#', (string) $wp->request, $m ) && isset( $m[1] ) ? $m[1] : '';
+			break;
+		}
+	}
+	if ( ! $guide_id ) {
+		return; // En anden regel matchede – ikke vores forespørgsel.
+	}
+	$guide = get_post( $guide_id );
 	if ( ! ibos_guides_is_guide( $guide ) || ! ibos_guides_request_in_base( $guide ) || ! ibos_guides_dispatch( $guide, $path ) ) {
 		unset( $wp->query_vars['ibos_guide'], $wp->query_vars['ibos_guide_path'] );
 		$wp->query_vars['error'] = '404';
@@ -55,8 +72,8 @@ function ibos_guides_parse_request( $wp ) {
 /**
  * Kommer forespørgslen faktisk fra guidens egen adresse?
  *
- * Query-variablerne er offentlige, så uden dette tjek kunne fx "/?ibos_guide=12&ibos_guide_path=sw.js"
- * servere appens service worker fra sitets rod, hvor den ville kunne styre hele sitet.
+ * Sammenligner den rå sti (ikke URL-afkodet), præcis som browseren ser den. Kodede
+ * skråstreger og ".." afvises, så en service worker aldrig kan serveres fra en sti uden for guiden.
  *
  * @param WP_Post $guide Rod-side.
  * @return bool
@@ -64,8 +81,10 @@ function ibos_guides_parse_request( $wp ) {
 function ibos_guides_request_in_base( $guide ) {
 	$base = (string) wp_parse_url( ibos_guides_base_url( $guide ), PHP_URL_PATH );
 	$req  = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_parse_url( wp_unslash( $_SERVER['REQUEST_URI'] ), PHP_URL_PATH ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- kun sammenlignet.
-	$req  = rawurldecode( $req );
-	return '' !== $base && ( 0 === strpos( $req, $base ) || rtrim( $base, '/' ) === $req );
+	if ( '' === $base || preg_match( '#%2f|%5c|\\\\|(^|/)\.\.?(/|$)#i', $req ) ) {
+		return false;
+	}
+	return 0 === strpos( $req, $base ) || rtrim( $base, '/' ) === $req;
 }
 
 /**
