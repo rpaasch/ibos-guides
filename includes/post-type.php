@@ -151,11 +151,12 @@ function ibos_guides_box_settings( $post ) {
 	wp_enqueue_media();
 	?>
 	<?php $is_guide = metadata_exists( 'post', $post->ID, '_ibg_color' ) || 'auto-draft' === $post->post_status; ?>
+	<p><?php esc_html_e( 'Her bestemmer du, hvordan appen ser ud, og hvor den ligger. Guidens titel er appens navn, og teksten i editoren er appens forside. Ændringer gemmes, når du trykker Opdatér, og brugerne får dem næste gang de åbner appen med internet.', 'ibos-guides' ); ?></p>
 	<p>
 		<label><input type="checkbox" name="ibg_is_guide" value="1" <?php checked( $is_guide ); ?>>
 		<strong><?php esc_html_e( 'Dette er en guide (en app med egen adresse)', 'ibos-guides' ); ?></strong></label>
 	</p>
-	<p class="description"><?php esc_html_e( 'Fjern fluebenet, hvis siden ikke skal være en offentlig app – fx et kapitel, der har mistet sin guide.', 'ibos-guides' ); ?></p>
+	<p class="description"><?php esc_html_e( 'Sæt flueben, når denne side skal være forsiden i en app, som borgere kan åbne og lægge på hjemmeskærmen. Siderne under den bliver appens kapitler og sider. Uden flueben er siden ikke en app og vises ingen steder.', 'ibos-guides' ); ?></p>
 	<table class="form-table" role="presentation">
 		<tr>
 			<th scope="row"><label for="ibg-slug"><?php esc_html_e( 'Adresse', 'ibos-guides' ); ?></label></th>
@@ -163,7 +164,7 @@ function ibos_guides_box_settings( $post ) {
 				<code><?php echo esc_html( home_url( '/' ) ); ?></code>
 				<input type="text" id="ibg-slug" name="ibg_slug" class="regular-text" value="<?php echo esc_attr( $s['slug'] ); ?>" aria-describedby="ibg-slug-help">
 				<code>/</code>
-				<p class="description" id="ibg-slug-help"><?php esc_html_e( 'Små bogstaver, tal og bindestreg. Ændres adressen, skal brugere installere appen igen.', 'ibos-guides' ); ?></p>
+				<p class="description" id="ibg-slug-help"><?php esc_html_e( 'Webadressen, som borgerne åbner – og som QR-koden på siden "Installér appen" peger på. Brug små bogstaver, tal og bindestreg; brug skråstreg til at samle flere guides, fx "guides/om-teknik". Vælg med omhu: ændrer du adressen senere, forsvinder appen fra borgernes hjemmeskærm, og de skal installere den igen. Adresser, som hjemmesiden allerede bruger, bliver afvist.', 'ibos-guides' ); ?></p>
 				<?php $slug_error = get_post_meta( $post->ID, '_ibg_slug_error', true ); ?>
 				<?php if ( $slug_error ) : ?>
 					<p class="notice notice-error inline" style="padding:.5em"><?php echo esc_html( $slug_error ); ?></p>
@@ -176,7 +177,7 @@ function ibos_guides_box_settings( $post ) {
 		<tr>
 			<th scope="row"><label for="ibg-short"><?php esc_html_e( 'Kort navn', 'ibos-guides' ); ?></label></th>
 			<td><input type="text" id="ibg-short" name="ibg_short_name" maxlength="20" value="<?php echo esc_attr( $s['short_name'] ); ?>" aria-describedby="ibg-short-help">
-				<p class="description" id="ibg-short-help"><?php esc_html_e( 'Navnet under ikonet på hjemmeskærmen (højst ca. 12 tegn).', 'ibos-guides' ); ?></p></td>
+				<p class="description" id="ibg-short-help"><?php esc_html_e( 'Teksten under app-ikonet på telefonens hjemmeskærm. Telefonen forkorter lange navne, så hold det på højst ca. 12 tegn, fx "O&M-teknik". Er feltet tomt, bruges guidens titel.', 'ibos-guides' ); ?></p></td>
 		</tr>
 		<tr>
 			<th scope="row"><label for="ibg-color"><?php esc_html_e( 'Temafarve', 'ibos-guides' ); ?></label></th>
@@ -184,7 +185,7 @@ function ibos_guides_box_settings( $post ) {
 				<p class="description" id="ibg-color-help">
 				<?php
 				/* translators: %s: kontrastforhold */
-				echo esc_html( sprintf( __( 'Bruges til topbjælken med hvid tekst. Kontrast mod hvid: %s:1 (mindst 4,5:1 kræves).', 'ibos-guides' ), number_format_i18n( $contrast, 1 ) ) );
+				echo esc_html( sprintf( __( 'Farven på bjælken øverst i appen og på telefonens statuslinje. Teksten i bjælken er hvid, så farven skal være mørk nok til, at svagsynede kan læse den: kontrasten skal være mindst 4,5:1 – lige nu er den %s:1. IBOS-farver: #00656c (petrol) og #00628b (blå).', 'ibos-guides' ), number_format_i18n( $contrast, 1 ) ) );
 				?>
 				</p>
 				<?php if ( $contrast < 4.5 ) : ?>
@@ -194,8 +195,8 @@ function ibos_guides_box_settings( $post ) {
 		</tr>
 		<?php
 		foreach ( array(
-			'icon_id' => array( __( 'App-ikon', 'ibos-guides' ), __( 'Kvadratisk billede, mindst 512×512 px. Hold motivet inden for de midterste 80 %.', 'ibos-guides' ) ),
-			'logo_id' => array( __( 'Logo (valgfrit)', 'ibos-guides' ), __( 'Vises i topbjælken. Bør være hvidt eller lyst. Alt-teksten hentes fra mediebiblioteket.', 'ibos-guides' ) ),
+			'icon_id' => array( __( 'App-ikon', 'ibos-guides' ), __( 'Billedet på telefonens hjemmeskærm. Brug et kvadratisk billede på mindst 512 × 512 pixels med et enkelt motiv uden tekst. Hold motivet inde i midten, fordi Android klipper hjørnerne af og kan vise ikonet som en cirkel. Baggrunden får temafarven. Vælger du intet, bruges et standardikon (en opslået bog).', 'ibos-guides' ) ),
+			'logo_id' => array( __( 'Logo (valgfrit)', 'ibos-guides' ), __( 'Et lille logo, fx IBOS-logoet, der vises foran appens navn i bjælken øverst. Brug en hvid eller lys udgave, så det kan ses på temafarven. Logoet er pynt – skærmlæsere læser appens navn.', 'ibos-guides' ) ),
 		) as $key => $info ) :
 			$img = $s[ $key ] ? wp_get_attachment_image_url( $s[ $key ], 'thumbnail' ) : '';
 			?>
@@ -214,21 +215,24 @@ function ibos_guides_box_settings( $post ) {
 		<?php endforeach; ?>
 		<tr>
 			<th scope="row"><label for="ibg-publisher"><?php esc_html_e( 'Udgiver', 'ibos-guides' ); ?></label></th>
-			<td><input type="text" id="ibg-publisher" name="ibg_publisher" class="large-text" value="<?php echo esc_attr( $s['publisher'] ); ?>"></td>
+			<td><input type="text" id="ibg-publisher" name="ibg_publisher" class="large-text" value="<?php echo esc_attr( $s['publisher'] ); ?>" aria-describedby="ibg-publisher-help">
+				<p class="description" id="ibg-publisher-help"><?php esc_html_e( 'Står nederst på alle sider i appen, fx "Udgivet af IBOS – Instituttet for Blinde og Svagsynede".', 'ibos-guides' ); ?></p></td>
 		</tr>
 		<tr>
 			<th scope="row"><label for="ibg-colophon"><?php esc_html_e( 'Kolofon', 'ibos-guides' ); ?></label></th>
-			<td><input type="text" id="ibg-colophon" name="ibg_colophon" class="large-text" value="<?php echo esc_attr( $s['colophon'] ); ?>"></td>
+			<td><input type="text" id="ibg-colophon" name="ibg_colophon" class="large-text" value="<?php echo esc_attr( $s['colophon'] ); ?>" aria-describedby="ibg-colophon-help">
+				<p class="description" id="ibg-colophon-help"><?php esc_html_e( 'Valgfri ekstra linje nederst på alle sider, fx hvem der har skrevet indholdet, eller hvornår det sidst er gennemgået.', 'ibos-guides' ); ?></p></td>
 		</tr>
 		<tr>
 			<th scope="row"><label for="ibg-menu"><?php esc_html_e( 'Menuvisning', 'ibos-guides' ); ?></label></th>
-			<td><select id="ibg-menu" name="ibg_menu">
+			<td><select id="ibg-menu" name="ibg_menu" aria-describedby="ibg-menu-help">
 				<option value="tiles" <?php selected( $s['menu'], 'tiles' ); ?>><?php esc_html_e( 'Felter', 'ibos-guides' ); ?></option>
 				<option value="list" <?php selected( $s['menu'], 'list' ); ?>><?php esc_html_e( 'Liste', 'ibos-guides' ); ?></option>
-			</select></td>
+			</select>
+				<p class="description" id="ibg-menu-help"><?php esc_html_e( 'Hvordan kapitler og sider vises på appens forside og på kapitelsiderne. "Felter" er store, tydelige felter, der er lette at ramme på en telefon. "Liste" er en enkel liste og passer bedst, når der er mange punkter. Skærmlæsere læser begge dele ens. Den enkelte side kan vælge anderledes under "Visning".', 'ibos-guides' ); ?></p></td>
 		</tr>
 	</table>
-	<p class="description"><?php esc_html_e( 'Guidens beskrivelse (uddrag) bruges i appens manifest og på forsiden i søgemaskiner.', 'ibos-guides' ); ?></p>
+	<p class="description"><?php esc_html_e( 'Tip: Skriv en kort beskrivelse af guiden i feltet "Uddrag" (i panelet til højre). Den bruges, når appen installeres, og som beskrivelse i søgemaskiner.', 'ibos-guides' ); ?></p>
 	<?php
 }
 
