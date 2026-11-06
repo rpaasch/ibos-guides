@@ -41,5 +41,8 @@ function ibos_guides_deactivate() {
 	foreach ( ibos_guides_routes() as $slug => $id ) {
 		unset( $wp_rewrite->extra_rules_top[ ibos_guides_rule_regex( $slug ) ] );
 	}
+	foreach ( array_keys( (array) get_option( 'ibos_guides_retired', array() ) ) as $slug ) {
+		unset( $wp_rewrite->extra_rules_top[ ibos_guides_retired_regex( $slug ) ] );
+	}
 	flush_rewrite_rules( false );
 }

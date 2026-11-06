@@ -42,6 +42,8 @@ self.addEventListener('activate', (event) => {
 });
 
 self.addEventListener('message', (event) => {
+  // Kun appens egne sider må bede om at skifte til en ny version.
+  if (!event.source || !event.source.url || !event.source.url.startsWith(SCOPE)) return;
   if (event.data && event.data.type === 'SKIP_WAITING') self.skipWaiting();
   if (event.data && event.data.type === 'GET_VERSION' && event.source) event.source.postMessage({ type: 'VERSION', version: VERSION });
 });
@@ -59,7 +61,7 @@ self.addEventListener('fetch', (event) => {
   if (!ACTIVE || req.method !== 'GET') return;
   const url = new URL(req.url);
   const inScope = req.url.startsWith(SCOPE);
-  const shared = url.origin === ORIGIN && SHARED.some((p) => url.pathname.includes(p));
+  const shared = url.origin === ORIGIN && SHARED.some((p) => url.pathname.startsWith(p));
   if (!inScope && !shared) return;
   const isNav = req.mode === 'navigate';
 
@@ -70,9 +72,16 @@ self.addEventListener('fetch', (event) => {
     if (!hit && isNav && !key.endsWith('/')) hit = await cache.match(key + '/');
     if (hit) return hit;
     try {
-      const res = await fetch(req);
-      // Ting der ikke var forhåndsgemt (fx JPEG-fallback), gemmes når de hentes.
-      if (res.ok && !isNav && res.type === 'basic') cache.put(req, res.clone());
+      // Filer uden for appens adresse hentes uden cookies, så intet personligt havner i cachen.
+      const res = shared ? await fetch(req.url, { credentials: 'omit' }) : await fetch(req);
+      // Kun statiske filer (billeder, CSS, JS) gemmes løbende – aldrig HTML, omdirigeringer
+      // eller svar, serveren har markeret som private.
+      const type = res.headers.get('content-type') || '';
+      const cc = res.headers.get('cache-control') || '';
+      if (res.ok && !isNav && res.type === 'basic' && !res.redirected && !/no-store|private/i.test(cc)
+        && /^(image\/|text\/css|text\/javascript|application\/javascript)/i.test(type)) {
+        cache.put(req, res.clone());
+      }
       return res;
     } catch (err) {
       // Offline: brug den forhåndsgemte (mindste) udgave af et billede.

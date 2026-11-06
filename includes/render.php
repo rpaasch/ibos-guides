@@ -371,6 +371,10 @@ function ibos_guides_collect( $guide ) {
 	$images = array();
 	$home   = wp_parse_url( home_url(), PHP_URL_HOST );
 	foreach ( array_keys( $tree['posts'] ) as $id ) {
+		// Skjulte sider kommer hverken i søgeindekset eller offline-listen (heller ikke deres billeder).
+		if ( ibos_guides_is_hidden( $id ) ) {
+			continue;
+		}
 		$p    = $tree['posts'][ $id ];
 		$html = ibos_guides_content( $p );
 		if ( preg_match_all( '/<img\b[^>]*\bsrc="([^"]+)"/i', $html, $m ) ) {
@@ -380,9 +384,6 @@ function ibos_guides_collect( $guide ) {
 					$images[ $src ] = true;
 				}
 			}
-		}
-		if ( ibos_guides_is_hidden( $id ) ) {
-			continue;
 		}
 		$index[] = array(
 			't' => html_entity_decode( get_the_title( $p ), ENT_QUOTES, 'UTF-8' ),

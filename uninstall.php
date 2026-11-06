@@ -9,7 +9,7 @@
 defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 
 global $wpdb;
-foreach ( array( 'ibos_guides_routes', 'ibos_guides_rev', 'ibos_guides_flush' ) as $opt ) {
+foreach ( array( 'ibos_guides_routes', 'ibos_guides_retired', 'ibos_guides_rev', 'ibos_guides_flush' ) as $opt ) {
 	delete_option( $opt );
 }
 // Importfremdrift og låse.

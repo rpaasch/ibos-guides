@@ -22,6 +22,37 @@ function ibos_guides_register_rewrites() {
 	foreach ( ibos_guides_routes() as $slug => $id ) {
 		add_rewrite_rule( ibos_guides_rule_regex( $slug ), 'index.php?ibos_guide=' . (int) $id . '&ibos_guide_path=$matches[1]', 'top' );
 	}
+	// Tidligere adresser: kun sw.js, som afregistrerer appen på enheder, der har den.
+	foreach ( array_keys( (array) get_option( 'ibos_guides_retired', array() ) ) as $slug ) {
+		add_rewrite_rule( ibos_guides_retired_regex( $slug ), 'index.php?ibos_guide=retired', 'top' );
+	}
+}
+
+/**
+ * Regex for en tidligere guide-adresses sw.js.
+ *
+ * @param string $slug Adresse.
+ * @return string
+ */
+function ibos_guides_retired_regex( $slug ) {
+	return '^' . preg_quote( $slug, '#' ) . '/sw\.js$';
+}
+
+/**
+ * Service worker, der sletter appens gemte indhold og afregistrerer sig selv.
+ * Serveres på adresser, der ikke længere er en app (gjort privat, slettet eller flyttet).
+ */
+function ibos_guides_kill_sw() {
+	ibos_guides_headers( 'text/javascript; charset=utf-8', 'no-cache, no-store, must-revalidate' );
+	echo "/* IBOS Guides: appen findes ikke længere på denne adresse. */\n"
+		. "self.addEventListener('install', () => self.skipWaiting());\n"
+		. "self.addEventListener('activate', (event) => event.waitUntil((async () => {\n"
+		. "  const prefix = 'ibos-guides:' + new URL(self.registration.scope).pathname + ':';\n"
+		. "  for (const k of await caches.keys()) if (k.startsWith(prefix)) await caches.delete(k);\n"
+		. "  await self.registration.unregister();\n"
+		. "  for (const c of await self.clients.matchAll({ type: 'window' })) c.navigate(c.url);\n"
+		. "})()));\n";
+	exit;
 }
 
 add_action( 'init', 'ibos_guides_maybe_flush', 99 );
@@ -50,6 +81,11 @@ function ibos_guides_parse_request( $wp ) {
 			$wp->query_vars['error'] = '404';
 		}
 		return;
+	}
+	foreach ( array_keys( (array) get_option( 'ibos_guides_retired', array() ) ) as $slug ) {
+		if ( ibos_guides_retired_regex( $slug ) === $wp->matched_rule && ! isset( ibos_guides_routes()[ $slug ] ) ) {
+			ibos_guides_kill_sw();
+		}
 	}
 	$guide_id = 0;
 	foreach ( ibos_guides_routes() as $slug => $id ) {

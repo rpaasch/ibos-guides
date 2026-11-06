@@ -148,6 +148,12 @@ function ibos_guides_box_settings( $post ) {
 	$contrast = ibos_guides_contrast( $s['color'], '#ffffff' );
 	wp_enqueue_media();
 	?>
+	<?php $is_guide = metadata_exists( 'post', $post->ID, '_ibg_color' ) || 'auto-draft' === $post->post_status; ?>
+	<p>
+		<label><input type="checkbox" name="ibg_is_guide" value="1" <?php checked( $is_guide ); ?>>
+		<strong><?php esc_html_e( 'Dette er en guide (en app med egen adresse)', 'ibos-guides' ); ?></strong></label>
+	</p>
+	<p class="description"><?php esc_html_e( 'Fjern fluebenet, hvis siden ikke skal være en offentlig app – fx et kapitel, der har mistet sin guide.', 'ibos-guides' ); ?></p>
 	<table class="form-table" role="presentation">
 		<tr>
 			<th scope="row"><label for="ibg-slug"><?php esc_html_e( 'Adresse', 'ibos-guides' ); ?></label></th>
@@ -301,7 +307,12 @@ function ibos_guides_save( $post_id, $post ) {
 		$cm = isset( $_POST['ibg_child_menu'] ) ? sanitize_key( wp_unslash( $_POST['ibg_child_menu'] ) ) : '';
 		update_post_meta( $post_id, '_ibg_child_menu', in_array( $cm, array( 'tiles', 'list' ), true ) ? $cm : '' );
 
-		if ( ! $post->post_parent && isset( $_POST['ibg_slug'] ) ) {
+		if ( ! $post->post_parent && isset( $_POST['ibg_slug'] ) && empty( $_POST['ibg_is_guide'] ) ) {
+			// Ikke (længere) en guide: fjern markøren og adressen, så siden ikke serveres som app.
+			delete_post_meta( $post_id, '_ibg_color' );
+			delete_post_meta( $post_id, '_ibg_slug' );
+			delete_post_meta( $post_id, '_ibg_slug_error' );
+		} elseif ( ! $post->post_parent && isset( $_POST['ibg_slug'] ) ) {
 			$slug = ibos_guides_clean_slug( sanitize_text_field( wp_unslash( $_POST['ibg_slug'] ) ) );
 			if ( '' === $slug ) {
 				$slug = ibos_guides_clean_slug( $post->post_name ? $post->post_name : sanitize_title( $post->post_title ) );
@@ -333,6 +344,61 @@ function ibos_guides_save( $post_id, $post ) {
 	}
 	if ( ibos_guides_refresh_routes() ) {
 		update_option( 'ibos_guides_flush', 1 );
+	}
+}
+
+// Flytning til en anden forælder: også den gamle guide skal have ny version (og ryddet cache),
+// ellers ligger sidens indhold i den gamle guides søgeindeks, til cachen udløber.
+add_action( 'pre_post_update', 'ibos_guides_before_update', 10, 2 );
+function ibos_guides_before_update( $post_id, $data ) {
+	$old = get_post( $post_id );
+	if ( $old && IBOS_GUIDES_CPT === $old->post_type && isset( $data['post_parent'] ) && (int) $data['post_parent'] !== (int) $old->post_parent ) {
+		$root = ibos_guides_root( $old );
+		if ( $root ) {
+			ibos_guides_bump( $root->ID );
+			delete_transient( 'ibg_collect_' . $root->ID );
+		}
+	}
+}
+
+// Papirkurv: når en guide eller et kapitel lægges i papirkurven, følger undersiderne med
+// (og gendannes sammen med den). Ellers bliver de forældreløse, når papirkurven tømmes.
+add_action( 'wp_trash_post', 'ibos_guides_trash_children' );
+function ibos_guides_trash_children( $post_id ) {
+	$post = get_post( $post_id );
+	if ( ! $post || IBOS_GUIDES_CPT !== $post->post_type ) {
+		return;
+	}
+	$kids = get_posts( array( 'post_type' => IBOS_GUIDES_CPT, 'post_parent' => $post_id, 'post_status' => array( 'publish', 'draft', 'pending', 'private', 'future' ), 'posts_per_page' => -1, 'fields' => 'ids' ) );
+	foreach ( $kids as $kid ) {
+		update_post_meta( $kid, '_ibg_trashed_with', (int) $post_id );
+		wp_trash_post( $kid );
+	}
+}
+add_action( 'untrashed_post', 'ibos_guides_untrash_children' );
+function ibos_guides_untrash_children( $post_id ) {
+	$kids = get_posts( array( 'post_type' => IBOS_GUIDES_CPT, 'post_status' => 'trash', 'posts_per_page' => -1, 'fields' => 'ids', 'meta_key' => '_ibg_trashed_with', 'meta_value' => (int) $post_id ) ); // phpcs:ignore WordPress.DB.SlowDBQuery
+	foreach ( $kids as $kid ) {
+		delete_post_meta( $kid, '_ibg_trashed_with' );
+		wp_untrash_post( $kid );
+	}
+}
+// Gendannede sider skal have deres tidligere status (ikke "kladde", som WP ellers sætter).
+add_filter( 'wp_untrash_post_status', 'ibos_guides_untrash_status', 10, 3 );
+function ibos_guides_untrash_status( $new_status, $post_id, $previous_status ) {
+	return IBOS_GUIDES_CPT === get_post_type( $post_id ) ? $previous_status : $new_status;
+}
+// Permanent sletning af en guide eller et kapitel: slet også undersiderne, så de ikke bliver
+// forældreløse sider på øverste niveau.
+add_action( 'before_delete_post', 'ibos_guides_delete_children', 10, 2 );
+function ibos_guides_delete_children( $post_id, $post = null ) {
+	$post = $post ? $post : get_post( $post_id );
+	if ( ! $post || IBOS_GUIDES_CPT !== $post->post_type ) {
+		return;
+	}
+	$kids = get_posts( array( 'post_type' => IBOS_GUIDES_CPT, 'post_parent' => $post_id, 'post_status' => 'any', 'posts_per_page' => -1, 'fields' => 'ids' ) );
+	foreach ( $kids as $kid ) {
+		wp_delete_post( $kid, true );
 	}
 }
 

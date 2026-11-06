@@ -161,9 +161,18 @@ function ibos_guides_refresh_routes() {
 			return strlen( $b ) - strlen( $a ) ?: strcmp( $a, $b );
 		}
 	);
-	if ( ibos_guides_routes() === $routes ) {
+	$old = ibos_guides_routes();
+	if ( $old === $routes ) {
 		return false;
 	}
+	// Adresser, der ikke længere er en app, huskes, så enheder, der har appen installeret,
+	// får en "afmeldings"-service worker og sletter det gemte indhold (se ibos_guides_kill_sw()).
+	$retired = (array) get_option( 'ibos_guides_retired', array() );
+	foreach ( array_diff_key( $old, $routes ) as $slug => $id ) {
+		$retired[ $slug ] = time();
+	}
+	$retired = array_diff_key( $retired, $routes );
+	update_option( 'ibos_guides_retired', $retired, true );
 	update_option( 'ibos_guides_routes', $routes, true );
 	return true;
 }

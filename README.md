@@ -52,7 +52,15 @@ De findes på guidens øverste side, i boksen **App-indstillinger** under editor
 - menuvisning (felter eller liste)
 
 ### En ny guide
-Opret en ny side **uden forælder**, udfyld app-indstillingerne, og udgiv. Opret derefter kapitler og sider under den.
+Opret en ny side **uden forælder**, sæt flueben ved **Dette er en guide**, udfyld app-indstillingerne, og udgiv. Opret derefter kapitler og sider under den.
+
+Adressen afvises, hvis den allerede bruges af en side, et indlæg, en anden guide eller WordPress selv (fx `/admin/`, `/category/`). Så vises en fejl i App-indstillinger, og den gamle adresse bevares.
+
+### Sikkerhed og synlighed
+- Kun **udgivne** sider vises i appen. Kladder, private, planlagte og **adgangskodebeskyttede** sider – og alt under dem – vises hverken i appen, søgningen, offline-cachen eller REST-API'et.
+- **"Skjul i menu …"** er *ikke* adgangskontrol: en skjult side kan åbnes, hvis man kender adressen. Brug Kladde eller Privat til indhold, der ikke må være offentligt.
+- Lægges en guide i papirkurven, følger kapitler og sider med (og gendannes sammen med den).
+- Gøres en guide privat, slettes eller får den ny adresse, sletter telefoner, der har appen installeret, automatisk det gemte indhold næste gang de er online.
 
 ---
 
