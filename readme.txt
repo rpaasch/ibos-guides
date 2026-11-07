@@ -65,7 +65,7 @@ Giv billedblokken CSS-klassen `dekorativ` (Avanceret → Ekstra CSS-klasse) og l
 * Oversigten henter hele træet med én forespørgsel.
 * Skabelon til nye sider (indledning, billede, punkter) med grå hjælpetekster; egen skabelon til kapitler og guides.
 * Mønstre under "IBOS Guide": side med trin og billede, billede/video med forklaring, mellemoverskrift med punkter, nummererede trin, godt at vide.
-* Video: videoblokken kan bruges (kræver internet; gemmes ikke offline). Uden net vises en besked i stedet for afspilleren, og videoen kommer tilbage, når nettet gør. Editoren viser råd ved videoblokken. Service workeren lader video og lyd gå direkte til serveren, så spoling virker.
+* Video: videoblokken kan bruges. Borgeren kan hente videoerne til brug uden internet på "Installér appen" (med fremdrift, plads-tjek og "Fjern"); de afspilles og kan spoles offline (Range fra cachen), også i Safari. Redaktøren ser størrelsen og kan slå "Kan hentes til brug uden internet" fra pr. video. Ikke-hentede videoer viser en besked med link uden net.
 * Kun relevante blokke i editoren og overskrifter H2–H4. Tomme blokke vises ikke i appen.
 * Tilgængelighedstjek: video uden undertekster, tomme billed-/videoblokke og glemt eksempeltekst.
 
