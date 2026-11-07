@@ -5,7 +5,7 @@
 // <commit> skal være en commit, der findes på GitHub (fx origin/main). Billederne hentes ved import
 // fra præcis den commit, og hvert billedes SHA-256 gemmes og tjekkes ved import.
 // Fx:   node tools/export-guide.mjs ../O-og-M om-teknik rpaasch/O-og-M main '#00628b'
-// Nøglen bliver også appens adresse i WordPress (fx /om-teknik/).
+// Nøglen er standardadressen ved import; den endelige adresse vælges i WordPress ved importen.
 import fs from 'node:fs';
 import path from 'node:path';
 import MarkdownIt from 'markdown-it';
@@ -16,7 +16,7 @@ import crypto from 'node:crypto';
 
 const [repoDir, key, ghRepo, commitArg = 'origin/main', colorArg] = process.argv.slice(2);
 if (!repoDir || !key || !ghRepo) {
-  console.error('Brug: node tools/export-guide.mjs <repo-mappe> <nøgle> <ejer/repo> [branch]');
+  console.error('Brug: node tools/export-guide.mjs <repo-mappe> <nøgle> <ejer/repo> [commit] [farve]');
   process.exit(1);
 }
 const ROOT = path.resolve(repoDir);

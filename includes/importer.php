@@ -61,7 +61,7 @@ function ibos_guides_import_page() {
 	?>
 	<div class="wrap">
 		<h1><?php esc_html_e( 'Importér guide', 'ibos-guides' ); ?></h1>
-		<p><?php esc_html_e( 'Opretter guiden med alle kapitler og sider. Billederne hentes fra GitHub og lægges i mediebiblioteket med deres alt-tekster. Det kan tage et par minutter – lad siden være åben imens.', 'ibos-guides' ); ?></p>
+		<p><?php esc_html_e( 'Opretter guiden med alle kapitler og sider. Billederne hentes fra GitHub og lægges i mediebiblioteket med deres alt-tekster. Det kan tage et par minutter – lad siden være åben imens. Bemærk: når importen er færdig, er guiden udgivet og kan ses af alle. Importér gerne på et testsite først, eller sæt guiden til Kladde bagefter.', 'ibos-guides' ); ?></p>
 		<table class="widefat striped" style="max-width:56rem">
 			<thead><tr>
 				<th scope="col"><?php esc_html_e( 'Guide', 'ibos-guides' ); ?></th>
@@ -81,8 +81,8 @@ function ibos_guides_import_page() {
 					<td>
 						<?php if ( $existing && 'publish' === $existing->post_status ) : ?>
 							<?php esc_html_e( 'Importeret.', 'ibos-guides' ); ?>
-							<a href="<?php echo esc_url( get_permalink( $existing ) ); ?>"><?php esc_html_e( 'Åbn appen', 'ibos-guides' ); ?></a>
-							<p class="description"><?php esc_html_e( 'Flyt den eksisterende guide til papirkurven og tøm den, hvis du vil importere igen.', 'ibos-guides' ); ?></p>
+							<a style="text-decoration:underline" href="<?php echo esc_url( get_permalink( $existing ) ); ?>"><?php esc_html_e( 'Åbn appen', 'ibos-guides' ); ?></a>
+							<p class="description"><?php esc_html_e( 'Vil du importere igen, så læg den eksisterende guide i papirkurven først (Guides → Alle guides og sider). Papirkurven behøver ikke at blive tømt.', 'ibos-guides' ); ?></p>
 						<?php else : ?>
 							<?php if ( ! $existing ) : ?>
 								<p>
@@ -133,13 +133,13 @@ function ibos_guides_import_page() {
 					status.textContent = r.data.message;
 					if ( r.data.done ) {
 						var a = document.createElement( 'a' );
-						a.href = r.data.url; a.textContent = <?php echo wp_json_encode( __( 'Åbn appen', 'ibos-guides' ) ); ?>;
+						a.href = r.data.url; a.style.textDecoration = "underline"; a.textContent = <?php echo wp_json_encode( __( 'Åbn appen', 'ibos-guides' ) ); ?>;
 						status.appendChild( document.createTextNode( ' ' ) ); status.appendChild( a );
 						btn.disabled = false;
 					} else { step( key, btn ); }
 				} )
 				.catch( function ( e ) {
-					status.textContent = <?php echo wp_json_encode( __( 'Importen stoppede: ', 'ibos-guides' ) ); ?> + e.message + ' ' + <?php echo wp_json_encode( __( 'Tryk på knappen igen for at fortsætte.', 'ibos-guides' ) ); ?>;
+					status.textContent = <?php echo wp_json_encode( __( 'Importen stoppede: ', 'ibos-guides' ) ); ?> + e.message + ' ' + <?php echo wp_json_encode( __( 'Ret problemet (fx adressen ovenfor), og tryk på knappen igen. Det, der allerede er importeret, bliver ikke importeret igen.', 'ibos-guides' ) ); ?>;
 					btn.disabled = false;
 				} );
 		}

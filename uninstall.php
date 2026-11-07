@@ -9,6 +9,7 @@
 defined( 'WP_UNINSTALL_PLUGIN' ) || exit;
 
 global $wpdb;
+wp_unschedule_hook( 'ibos_guides_rebuild' );
 // "ibos_guides_retired" bevares bevidst: geninstalleres pluginet, kan telefoner, der stadig har
 // en gammel app, så stadig få besked om at fjerne den.
 foreach ( array( 'ibos_guides_routes', 'ibos_guides_rev', 'ibos_guides_flush' ) as $opt ) {

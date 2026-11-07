@@ -56,7 +56,7 @@ function ibos_guides_retired() {
  * @return string
  */
 function ibos_guides_retired_regex( $slug ) {
-	return '^' . preg_quote( $slug, '#' ) . '/sw\.js$';
+	return '^' . preg_quote( $slug, '#' ) . '/(sw\.js|manifest\.webmanifest)$';
 }
 
 /**
@@ -110,10 +110,19 @@ function ibos_guides_parse_request( $wp ) {
 		// Kun på præcis den tidligere adresse, og ikke hvis en side eller et indlæg nu bruger den
 		// (så kan et andet system have sin egen sw.js der – og appens egen baggrundskontrol
 		// fjerner den gamle app, når manifestet ikke længere findes).
-		$req = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_parse_url( wp_unslash( $_SERVER['REQUEST_URI'] ), PHP_URL_PATH ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- kun sammenlignet.
-		$own = (string) wp_parse_url( home_url( '/' . $slug . '/sw.js' ), PHP_URL_PATH );
-		if ( ! isset( ibos_guides_routes()[ $slug ] ) && $req === $own && ! get_page_by_path( $slug, OBJECT, array( 'page', 'post' ) ) ) {
+		$req  = isset( $_SERVER['REQUEST_URI'] ) ? (string) wp_parse_url( wp_unslash( $_SERVER['REQUEST_URI'] ), PHP_URL_PATH ) : ''; // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- kun sammenlignet.
+		$free = ! isset( ibos_guides_routes()[ $slug ] ) && ! get_page_by_path( $slug, OBJECT, array( 'page', 'post' ) );
+		if ( $free && (string) wp_parse_url( home_url( '/' . $slug . '/sw.js' ), PHP_URL_PATH ) === $req ) {
 			ibos_guides_kill_sw();
+		}
+		// "410 Gone" er det eneste svar, der får en installeret app til at fjerne sig selv. En
+		// midlertidig fejl (404 fra et deaktiveret plugin, omdirigering, serverfejl) gør det ikke.
+		if ( $free && (string) wp_parse_url( home_url( '/' . $slug . '/manifest.webmanifest' ), PHP_URL_PATH ) === $req ) {
+			status_header( 410 );
+			nocache_headers();
+			header( 'Content-Type: text/plain; charset=utf-8' );
+			echo 'Gone';
+			exit;
 		}
 		unset( $wp->query_vars['ibos_guide'], $wp->query_vars['ibos_guide_path'] );
 		$wp->query_vars['error'] = '404';

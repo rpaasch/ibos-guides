@@ -18,6 +18,17 @@ const ORIGIN = new URL(SCOPE).origin;
 // Filer uden for appens adresse, som appen bruger (uploads og pluginets filer).
 const SHARED = __SHARED__;
 const CACHE = PREFIX + VERSION;
+// Videoer, borgeren selv kan hente til brug uden internet (på siden "Installér appen").
+// De ligger i en særskilt cache, som overlever nye versioner af appen.
+// Adresserne normaliseres, som browseren gør (fx %20 og små bogstaver i værtsnavnet).
+const VIDEOS = __VIDEOS__.map((u) => new URL(u, SCOPE).href);
+const VIDEO_SET = new Set(VIDEOS);
+const VIDEO_CACHE = PREFIX + 'videos';
+// En video gemmes i bidder på 2 MB plus en lille indholdsfortegnelse (under videoens egen
+// adresse). Så skal telefonen aldrig have hele filen i hukommelsen – heller ikke ved spoling
+// i en stor video på en ældre iPhone.
+const partUrl = (url, i) => url + (url.indexOf('?') < 0 ? '?' : '&') + 'ibg-part=' + i;
+const baseUrl = (url) => { const u = new URL(url); u.searchParams.delete('ibg-part'); return u.href; };
 
 async function removeApp() {
   for (const k of await caches.keys()) if (k.startsWith(PREFIX)) await caches.delete(k);
@@ -44,14 +55,19 @@ self.addEventListener('install', (event) => {
       await Promise.all(OPTIONAL.slice(i, i + 8).map((p) => get(p).catch(() => {})));
     }
   })());
-  // Første installation aktiveres straks. Opdateringer venter, til brugeren vælger "Genindlæs".
+  // Første installation aktiveres straks. Opdateringer venter, til brugeren vælger "Opdatér nu".
 });
 
 self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     if (!ACTIVE) { await removeApp(); return; } // Forkert scope: ryd op i stedet for at gribe ind.
     for (const key of await caches.keys()) {
-      if (key.startsWith(PREFIX) && key !== CACHE) await caches.delete(key);
+      if (key.startsWith(PREFIX) && key !== CACHE && key !== VIDEO_CACHE) await caches.delete(key);
+    }
+    // Videoer, der ikke længere er i appen (slettet, eller må ikke længere gemmes), fjernes.
+    if (await caches.has(VIDEO_CACHE)) {
+      const vc = await caches.open(VIDEO_CACHE);
+      for (const r of await vc.keys()) if (!VIDEO_SET.has(baseUrl(r.url))) await vc.delete(r);
     }
     await self.clients.claim();
   })());
@@ -64,16 +80,68 @@ self.addEventListener('message', (event) => {
 });
 
 // Findes appen stadig? Tjekkes i baggrunden (højst hvert minut), når siderne vises fra
-// cachen. Svarer serveren 404/410 eller sender videre et andet sted hen (plugin deaktiveret,
-// guide gjort privat/slettet, domæne flyttet), fjernes appen fra enheden.
+// cachen. Kun svaret "410 Gone" – som WordPress giver, når guiden er gjort privat, slettet
+// eller flyttet – fjerner appen fra enheden. En midlertidig fejl (plugin slået fra, 404,
+// omdirigering, serverfejl) må aldrig slette borgerens app og hentede videoer.
 let lastCheck = 0;
 async function checkStillPublished() {
   if (Date.now() - lastCheck < 60 * 1000) return;
   lastCheck = Date.now();
   try {
     const res = await fetch(SCOPE + 'manifest.webmanifest', { cache: 'no-store', credentials: 'omit', redirect: 'manual' });
-    if (res.status === 404 || res.status === 410 || res.type === 'opaqueredirect') await removeApp();
+    if (res.status === 410) await removeApp();
   } catch (e) { /* offline eller netværksfejl: gør intet */ }
+}
+
+// En hentet video – hele filen eller den bid (Range), afspilleren beder om.
+// En hentet video – hele filen eller den bid (Range), afspilleren beder om. Svaret strømmes
+// bid for bid fra cachen.
+async function serveVideo(req) {
+  const cache = await caches.open(VIDEO_CACHE);
+  // Findes videoen stadig? (Borgeren kan have fjernet den på "Installér appen".)
+  const hit = await cache.match(req.url);
+  if (!hit || hit.headers.get('X-Ibg-Video') !== 'parts') return fetch(req);
+  const meta = await hit.json();
+  const size = meta.size;
+  const type = meta.type || 'video/mp4';
+  const head = { 'Content-Type': type, 'Accept-Ranges': 'bytes' };
+  let start = 0;
+  let end = size - 1;
+  let status = 200;
+  const rh = req.headers.get('range');
+  if (rh) {
+    const range = /^bytes=(\d*)-(\d*)$/.exec(rh.trim());
+    if (range) {
+      if (range[1] === '' && range[2] === '') {
+        return new Response(null, { status: 416, headers: { 'Content-Range': 'bytes */' + size } });
+      }
+      start = range[1] === '' ? NaN : parseInt(range[1], 10);
+      end = range[2] === '' ? size - 1 : parseInt(range[2], 10);
+      if (isNaN(start)) { start = Math.max(0, size - end); end = size - 1; } // "bytes=-500": de sidste 500
+      end = Math.min(end, size - 1);
+      if (start >= size || end < start) {
+        return new Response(null, { status: 416, headers: { 'Content-Range': 'bytes */' + size } });
+      }
+      status = 206;
+      head['Content-Range'] = 'bytes ' + start + '-' + end + '/' + size;
+    } // Flere intervaller eller ugyldigt: hele filen.
+  }
+  head['Content-Length'] = String(end - start + 1);
+  let pos = start;
+  const body = new ReadableStream({
+    async pull(ctl) {
+      if (pos > end) { ctl.close(); return; }
+      const i = Math.floor(pos / meta.part);
+      const r = await cache.match(partUrl(req.url, i));
+      if (!r) { ctl.error(new Error('Videoen mangler en bid')); return; }
+      const buf = new Uint8Array(await r.arrayBuffer());
+      const from = pos - i * meta.part;
+      const to = Math.min(buf.length, end - i * meta.part + 1);
+      ctl.enqueue(buf.subarray(from, to));
+      pos = i * meta.part + to;
+    }
+  });
+  return new Response(body, { status, headers: head });
 }
 
 function normalize(url) {
@@ -89,6 +157,10 @@ const IMG = /^(.*?)(-\d+x\d+)?(-scaled)?\.(jpe?g|png|webp|gif|avif)$/i;
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (!ACTIVE || req.method !== 'GET') return;
+  // Hentede videoer afspilles fra telefonen (med spoling) – også når filen åbnes direkte.
+  if (VIDEO_SET.has(req.url) && req.mode !== 'navigate') { event.respondWith(serveVideo(req)); return; }
+  // Anden video og lyd hentes i bidder (Range) direkte fra serveren.
+  if (req.headers.has('range') || req.destination === 'video' || req.destination === 'audio') return;
   const url = new URL(req.url);
   const inScope = req.url.startsWith(SCOPE);
   const shared = url.origin === ORIGIN && (PRECACHE_SET.has(req.url) || SHARED.some((p) => url.pathname.startsWith(p)));
