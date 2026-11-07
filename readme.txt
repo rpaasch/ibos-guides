@@ -4,7 +4,7 @@ Tags: pwa, offline, accessibility, guide, app
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.1.2
+Stable tag: 1.2.0
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -57,6 +57,17 @@ Gå til Indstillinger → Permalinks og tryk "Gem ændringer". Permalinks må ik
 Giv billedblokken CSS-klassen `dekorativ` (Avanceret → Ekstra CSS-klasse) og lad alt-teksten være tom.
 
 == Changelog ==
+
+= 1.2.0 =
+* Oversigt: træk og slip sider og kapitler – også mellem kapitler. ↑/↓ og "Flyt til kapitlet" virker uden mus.
+* Oversigt: Kopiér og Læg i papirkurven (med Fortryd) under "Mere".
+* Editoren: Forrige/Næste side, "+ Ny side" og "Tilbage til Oversigt" i boksen Placering.
+* Oversigten henter hele træet med én forespørgsel.
+* Skabelon til nye sider (indledning, billede, punkter) med grå hjælpetekster; egen skabelon til kapitler og guides.
+* Mønstre under "IBOS Guide": side med trin og billede, billede/video med forklaring, mellemoverskrift med punkter, nummererede trin, godt at vide.
+* Video: videoblokken kan bruges (kræver internet; gemmes ikke offline). Service workeren lader video og lyd gå direkte til serveren, så spoling virker.
+* Kun relevante blokke i editoren og overskrifter H2–H4. Tomme blokke vises ikke i appen.
+* Tilgængelighedstjek: video uden undertekster, tomme billed-/videoblokke og glemt eksempeltekst.
 
 = 1.1.2 =
 * Zip-filen har versionsnummer i navnet, fx ibos-guides-1.1.2.zip.

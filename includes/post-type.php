@@ -89,7 +89,7 @@ function ibos_guides_post_link( $link, $post ) {
 // Flyttes en side til en anden forælder, lægges den sidst dér.
 add_filter( 'wp_insert_post_data', 'ibos_guides_parent_changed_order', 11, 2 );
 function ibos_guides_parent_changed_order( $data, $postarr ) {
-	if ( IBOS_GUIDES_CPT !== $data['post_type'] || empty( $postarr['ID'] ) ) {
+	if ( IBOS_GUIDES_CPT !== $data['post_type'] || empty( $postarr['ID'] ) || ! empty( $GLOBALS['ibos_guides_placing'] ) ) {
 		return $data;
 	}
 	$old = get_post( (int) $postarr['ID'] );

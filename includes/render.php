@@ -32,7 +32,9 @@ function ibos_guides_content( $post, $use_cache = true ) {
 	$prev            = isset( $GLOBALS['post'] ) ? $GLOBALS['post'] : null;
 	$GLOBALS['post'] = $post; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 	setup_postdata( $post );
+	add_filter( 'render_block', 'ibos_guides_drop_empty_block', 10, 2 ); // Ubrugte felter fra skabelonen.
 	$html = apply_filters( 'the_content', $post->post_content ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
+	remove_filter( 'render_block', 'ibos_guides_drop_empty_block', 10 );
 	// Overskrift 1 hører kun til sidens titel.
 	$html            = preg_replace( '#<(/?)h1(\s|>)#i', '<$1h2$2', $html );
 	$GLOBALS['post'] = $prev; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited

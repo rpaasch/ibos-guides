@@ -37,16 +37,21 @@ Alt foregår under menupunktet **Guides**.
 | Side med guiden som forælder | **Et kapitel** i menuen | Ledsageteknik |
 | Side under et kapitel | **En indholdsside** | Grebet |
 
-- **Overblik:** **Guides → Oversigt** viser hver guide som et træ med kapitler og sider. Herfra kan du redigere, se siden i appen, flytte op/ned og oprette nye kapitler og sider direkte på det rigtige sted.
-- **Ny side:** Guides → Oversigt → **+ Ny side i kapitlet**. Siden lægges automatisk sidst i kapitlet. Du kan også bruge Guides → Ny guide og så vælge **Overordnet** øverst i panelet til højre (kapitlet for en side, guiden for et kapitel).
-- **Rækkefølge:** brug **Flyt op/ned** i Oversigt. Flyttes en side til et andet kapitel via Overordnet, lægges den sidst dér.
+- **Overblik:** **Guides → Oversigt** viser hver guide som en indholdsfortegnelse med kapitler og sider, i samme rækkefølge som i appen. Alle ændringer gemmes med det samme.
+- **Flyt:** træk i håndtaget **⠿** foran en side, også over i et andet kapitel. Uden mus kan du bruge **↑/↓** eller **Mere → Flyt til kapitlet**.
+- **Ny side:** **+ Ny side i kapitlet** i Oversigt eller i boksen **Placering** i editoren. Siden lægges sidst i kapitlet.
+- **Kopiér og slet:** **Mere → Kopiér** laver en kladde lige under originalen. **Mere → Læg i papirkurven** tager eventuelle undersider med, og det kan fortrydes.
+- **I editoren:** boksen **Placering** viser, hvor siden ligger, og har knapperne **‹ Forrige / Næste ›** (i appens rækkefølge), **+ Ny side** og **Tilbage til Oversigt**. Du kan også flytte en side ved at vælge **Overordnet** øverst i panelet.
 - **Kapitler er sider:** et kapitel er selv en side. Den vises som menupunkt med sine undersider og kan have en kort intro-tekst.
-- **Tekst:** skriv i blok-editoren. Brug **Overskrift H2** og nedefter. Sidens titel er allerede overskrift 1.
+- **Skabelon:** en ny side starter med en indledning, et billede og punkter. Hvert felt har en grå hjælpetekst, som forsvinder, når du skriver. Felter, du ikke bruger, vises ikke i appen, men det er pænest at slette dem. Kapitler og guides får deres egen korte skabelon.
+- **Mønstre:** tryk **+** (Bloktilføjelse) → **Blokgrupper** → **IBOS Guide** for færdige byggeklodser: *Side med trin og billede*, *Billede med forklaring*, *Video med forklaring*, *Mellemoverskrift med punkter*, *Nummererede trin* og *Godt at vide*. Eksempelteksten står i `[✎ …]`. Skriv den om. Tjekket og Oversigten advarer, hvis den stadig står der.
+- **Tekst:** skriv i blok-editoren. Overskrifter kan kun være H2–H4, fordi sidens titel er overskrift 1. Kun blokke, der giver mening i en guide, kan vælges.
 - **Billeder:** brug billedblokken, og udfyld **Alternativ tekst**. Er billedet kun pynt, så giv blokken CSS-klassen `dekorativ` (Avanceret → Ekstra CSS-klasse) og lad alt-teksten være tom.
+- **Video:** brug videoblokken, og upload videoen til Medier (mp4). Tilføj undertekster under **Teksttråde** (en .vtt-fil), og skriv kort i teksten, hvad videoen viser. Videoer kræver internet. De gemmes ikke i appen offline, fordi de fylder for meget på telefonen. Tjekket advarer om manglende undertekster.
 - **Kort beskrivelse i menuen:** udfyld **Uddrag** (excerpt).
 - **Skjul en side:** sæt flueben ved "Skjul i menu …" i boksen **Visning**.
 - **Udgiv:** tryk **Opdatér**. Næste gang brugerne åbner appen med internet, får de beskeden "Ny version klar – Genindlæs".
-- **Tilgængelighedstjek:** boksen af samme navn og kolonnen **Tjek** i listen viser fx manglende alt-tekster og spring i overskriftsniveauer.
+- **Tilgængelighedstjek:** boksen af samme navn og kolonnen **Tjek** i listen viser fx manglende alt-tekster, video uden undertekster, tomme billedblokke, eksempeltekst fra mønstre og spring i overskriftsniveauer.
 
 ### App-indstillinger
 Findes på guidens øverste side i boksen **App-indstillinger** i panelet til højre i editoren (under Placering). Guidens **titel** er appens navn, og teksten i editoren er appens forside.

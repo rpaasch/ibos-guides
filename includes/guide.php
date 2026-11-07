@@ -426,6 +426,10 @@ function ibos_guides_check( $post ) {
 	$p          = new WP_HTML_Tag_Processor( $html );
 	$decorative = 0; // Dybde inde i <figure class="… dekorativ …">.
 	$missing    = false;
+	$empty_img  = false;
+	$videos     = 0;
+	$tracks     = 0;
+	$empty_vid  = false;
 	$h1         = false;
 	$last       = 1;
 	$skip       = '';
@@ -442,7 +446,17 @@ function ibos_guides_check( $post ) {
 		if ( $p->is_tag_closer() ) {
 			continue;
 		}
-		if ( 'IMG' === $tag && ! $decorative ) {
+		if ( 'VIDEO' === $tag ) {
+			if ( is_string( $p->get_attribute( 'src' ) ) ) {
+				++$videos;
+			} else {
+				$empty_vid = true;
+			}
+		} elseif ( 'TRACK' === $tag && in_array( strtolower( (string) $p->get_attribute( 'kind' ) ), array( 'captions', 'subtitles' ), true ) ) {
+			++$tracks;
+		} elseif ( 'IMG' === $tag && ! is_string( $p->get_attribute( 'src' ) ) ) {
+			$empty_img = true; // Tom billedblok (fx fra skabelonen); vises ikke i appen.
+		} elseif ( 'IMG' === $tag && ! $decorative ) {
 			$alt = $p->get_attribute( 'alt' );
 			if ( ! is_string( $alt ) || '' === trim( $alt ) ) {
 				$missing = true;
@@ -457,6 +471,18 @@ function ibos_guides_check( $post ) {
 			}
 			$last = $lvl;
 		}
+	}
+	if ( function_exists( 'ibos_guides_has_sample' ) && ibos_guides_has_sample( $html ) ) {
+		$w[] = __( 'Der står stadig eksempeltekst fra et mønster – tekst i firkantede parenteser, der starter med ✎. Skriv den om, eller slet blokken.', 'ibos-guides' );
+	}
+	if ( $videos > $tracks ) {
+		$w[] = __( 'En video mangler undertekster. Vælg videoblokken → "Teksttråde" og upload en undertekstfil (.vtt) med typen "Undertekster" eller "Billedtekster". Beskriv også kort i teksten, hvad videoen viser.', 'ibos-guides' );
+	}
+	if ( $empty_vid ) {
+		$w[] = __( 'Der er en tom videoblok. Vælg en video (Upload eller Mediebibliotek), eller slet blokken.', 'ibos-guides' );
+	}
+	if ( $empty_img ) {
+		$w[] = __( 'Der er en tom billedblok. Vælg et billede (Upload eller Mediebibliotek), eller slet blokken. Tomme blokke vises ikke i appen.', 'ibos-guides' );
 	}
 	if ( $missing ) {
 		$w[] = __( 'Et billede mangler alt-tekst. Skriv en beskrivelse i billedblokkens felt "Alternativ tekst" – eller giv blokken CSS-klassen "dekorativ", hvis billedet kun er pynt.', 'ibos-guides' );

@@ -89,6 +89,9 @@ const IMG = /^(.*?)(-\d+x\d+)?(-scaled)?\.(jpe?g|png|webp|gif|avif)$/i;
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (!ACTIVE || req.method !== 'GET') return;
+  // Video og lyd: browseren henter dem i bidder (Range). De gemmes ikke offline og går
+  // direkte til serveren, så afspilning og spoling virker (også i Safari).
+  if (req.headers.has('range') || req.destination === 'video' || req.destination === 'audio') return;
   const url = new URL(req.url);
   const inScope = req.url.startsWith(SCOPE);
   const shared = url.origin === ORIGIN && (PRECACHE_SET.has(req.url) || SHARED.some((p) => url.pathname.startsWith(p)));
