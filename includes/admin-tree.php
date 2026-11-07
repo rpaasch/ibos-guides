@@ -394,6 +394,130 @@ function ibos_guides_untrash() {
 	ibos_guides_tree_redirect( 'restored', $id );
 }
 
+/* ---------------------------------------------------------------------------
+ * "Udgiv guiden": udgiv kladder og gemte, ikke-udgivne ændringer i ét hug
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Den aktuelle brugers ikke-udgivne ændring (autogem) af en udgivet side, hvis den er nyere
+ * end siden og faktisk ændrer noget.
+ *
+ * @param WP_Post $p Side.
+ * @return WP_Post|null
+ */
+function ibos_guides_pending_change( $p ) {
+	if ( 'publish' !== $p->post_status ) {
+		return null;
+	}
+	$a = wp_get_post_autosave( $p->ID, get_current_user_id() );
+	if ( ! $a || strtotime( $a->post_modified_gmt ) < strtotime( $p->post_modified_gmt ) ) {
+		return null;
+	}
+	if ( $a->post_title === $p->post_title && $a->post_content === $p->post_content && $a->post_excerpt === $p->post_excerpt ) {
+		return null;
+	}
+	return $a;
+}
+
+/**
+ * Det, der venter på at blive udgivet i en guide, i læserækkefølge.
+ *
+ * @param int   $gid   Guide.
+ * @param array $index Fra ibos_guides_tree_index().
+ * @return array[] array( 'post', 'type' => 'draft'|'change', 'auto', 'depth', 'warn' )
+ */
+function ibos_guides_pending( $gid, $index ) {
+	$out = array();
+	foreach ( ibos_guides_reading_order( $gid, $index ) as $id ) {
+		$p = $index['posts'][ $id ];
+		if ( ! current_user_can( 'publish_post', $id ) ) {
+			continue;
+		}
+		if ( in_array( $p->post_status, array( 'draft', 'pending' ), true ) ) {
+			$out[] = array( 'post' => $p, 'type' => 'draft', 'auto' => null, 'depth' => $index['depth'][ $id ], 'warn' => count( ibos_guides_check( $p ) ) );
+		} else {
+			$auto = ibos_guides_pending_change( $p );
+			if ( $auto ) {
+				$view               = clone $p;
+				$view->post_title   = $auto->post_title;
+				$view->post_content = $auto->post_content;
+				$out[] = array( 'post' => $p, 'type' => 'change', 'auto' => $auto, 'depth' => $index['depth'][ $id ], 'warn' => count( ibos_guides_check( $view ) ) );
+			}
+		}
+	}
+	return $out;
+}
+
+add_action( 'admin_post_ibos_guides_publish_guide', 'ibos_guides_publish_guide' );
+function ibos_guides_publish_guide() {
+	global $wpdb;
+	$gid = ibos_guides_post_int( 'guide' );
+	check_admin_referer( 'ibos_guides_publish_guide_' . $gid );
+	$guide = get_post( $gid );
+	if ( ! $guide || IBOS_GUIDES_CPT !== $guide->post_type || $guide->post_parent || ! current_user_can( 'publish_pages' ) ) {
+		wp_die( esc_html__( 'Du har ikke adgang til at udgive denne guide.', 'ibos-guides' ) );
+	}
+	$raw = isset( $_POST['ids'] ) && is_array( $_POST['ids'] ) ? array_slice( wp_unslash( $_POST['ids'] ), 0, 1000 ) : array(); // phpcs:ignore WordPress.Security.ValidatedSanitizedInput.InputNotSanitized -- renses med absint.
+	$ids = array_values( array_unique( array_filter( array_map( 'absint', $raw ) ) ) );
+	// Øverste niveau først, så et kapitel er udgivet, før dets sider bliver det.
+	$items = array();
+	foreach ( $ids as $id ) {
+		$p    = get_post( $id );
+		$root = $p ? ibos_guides_root( $p ) : null;
+		if ( ! $p || ! $root || (int) $root->ID !== $gid || ! current_user_can( 'publish_post', $id ) ) {
+			continue;
+		}
+		$items[] = array( $p, count( get_post_ancestors( $p ) ) );
+	}
+	usort(
+		$items,
+		function ( $a, $b ) {
+			return $a[1] - $b[1];
+		}
+	);
+	$drafts  = 0;
+	$changes = 0;
+	foreach ( $items as $it ) {
+		$p = $it[0];
+		if ( in_array( $p->post_status, array( 'draft', 'pending' ), true ) ) {
+			// Kladder har ofte hverken adresse eller udgivelsesdato endnu.
+			$data = array();
+			if ( '' === $p->post_name ) {
+				$data['post_name'] = wp_unique_post_slug( sanitize_title( $p->post_title ? $p->post_title : 'side-' . $p->ID ), $p->ID, 'publish', $p->post_type, $p->post_parent );
+			}
+			if ( '0000-00-00 00:00:00' === $p->post_date_gmt ) {
+				$data['post_date']     = current_time( 'mysql' );
+				$data['post_date_gmt'] = current_time( 'mysql', true );
+			}
+			if ( $data ) {
+				$wpdb->update( $wpdb->posts, $data, array( 'ID' => $p->ID ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+				clean_post_cache( $p->ID );
+			}
+			wp_publish_post( $p->ID ); // Skifter kun status – indholdet gemmes ikke igen.
+			++$drafts;
+		} elseif ( 'publish' === $p->post_status ) {
+			$auto = ibos_guides_pending_change( $p );
+			if ( $auto && current_user_can( 'edit_post', $p->ID ) ) {
+				wp_update_post(
+					wp_slash(
+						array(
+							'ID'           => $p->ID,
+							'post_title'   => $auto->post_title,
+							'post_content' => $auto->post_content,
+							'post_excerpt' => $auto->post_excerpt,
+						)
+					)
+				);
+				wp_delete_post_revision( $auto->ID );
+				++$changes;
+			}
+		}
+	}
+	// Alt er gemt i samme forespørgsel, så appen bygges én gang og borgerne får én ny version.
+	wp_safe_redirect( admin_url( 'admin.php?page=ibos-guides&ibg_published=' . $gid . '&ibg_n=' . $drafts . '-' . $changes . '#ibg-guide-' . $gid ) );
+	exit;
+}
+
 /* Forhåndsvisning i appens design. Kun for brugere, der må redigere siden; adressen ligger i
    WordPress-administrationen, så appens service worker aldrig griber ind, og intet caches. */
 add_action( 'admin_post_ibos_guides_preview', 'ibos_guides_preview' );
@@ -502,7 +626,7 @@ function ibos_guides_tree_page() {
 				<li><?php esc_html_e( 'Flyt: træk i håndtaget ⠿ – også over i et andet kapitel. Eller brug knapperne ↑ og ↓ eller "Flyt til" under "Mere".', 'ibos-guides' ); ?></li>
 				<li><?php esc_html_e( 'Ny side: brug "+ Ny side i kapitlet". Siden lægges sidst i kapitlet. Under "Mere" kan du også kopiere en side eller lægge den i papirkurven.', 'ibos-guides' ); ?></li>
 				<li><?php esc_html_e( 'Røde mærker viser, hvad der mangler – fx "2 ting at rette" (alt-tekst, undertekster, eksempeltekst) eller "Ikke i appen", når et kapitel stadig er en kladde.', 'ibos-guides' ); ?></li>
-				<li><?php esc_html_e( 'Ændringer gemmes med det samme, og appen får en ny version.', 'ibos-guides' ); ?></li>
+				<li><?php esc_html_e( 'Flyt og rækkefølge gemmes med det samme. Vil du opdatere appen i ét hug, så gem nye sider som kladde og ændringer med "Gem uden at udgive", og brug derefter "Gennemse og udgiv guiden".', 'ibos-guides' ); ?></li>
 			</ul>
 		</div>
 		<p id="ibg-tree-status" class="ibg-tree-status screen-reader-text" role="status" aria-live="polite"<?php echo ( $did && isset( $msgs[ $done ] ) ) ? ' data-announce="' . esc_attr( sprintf( $msgs[ $done ], get_the_title( $did ) ) . ( $note ? ' ' . $note : '' ) ) . '" data-focus="' . esc_attr( $done . ':' . $did ) . '"' : ''; ?>></p>
@@ -512,6 +636,7 @@ function ibos_guides_tree_page() {
 		<?php foreach ( isset( $index['kids'][0] ) ? $index['kids'][0] : array() as $gid ) : ?>
 			<section class="ibg-tree-guide" aria-labelledby="ibg-guide-<?php echo (int) $gid; ?>">
 				<h2 id="ibg-guide-<?php echo (int) $gid; ?>"><?php echo esc_html( get_the_title( $gid ) ); ?></h2>
+				<?php ibos_guides_publish_box( $gid, $index ); ?>
 				<ul class="ibg-tree">
 					<?php ibos_guides_tree_item( $index['posts'][ $gid ], 0, $gid, $index ); ?>
 				</ul>
@@ -538,6 +663,14 @@ function ibos_guides_tree_page() {
 
 .ibg-more-panel { display:flex; flex-wrap:wrap; align-items:center; gap:.75rem 1.5rem; background:#f6f7f7; border:1px solid #dcdcde; border-radius:4px; padding:.6rem .75rem; margin:.25rem 0 .5rem; }
 		.ibg-more-panel[hidden] { display:none; }
+		.ibg-publish { background:#f6f7f7; border:1px solid #dcdcde; border-radius:4px; padding:.5rem .9rem .75rem; margin:0 0 1rem; }
+		.ibg-publish p { margin:.4rem 0; }
+		.ibg-publish fieldset { margin:.25rem 0; }
+		.ibg-publish legend { font-weight:600; margin-bottom:.35rem; }
+		.ibg-publish-items { list-style:none; margin:0; padding:0; }
+		.ibg-publish-items li { margin:.3rem 0; }
+		.ibg-publish-form.ibg-more-panel { display:block; background:#fff; }
+		.ibg-publish-form[hidden] { display:none; }
 		.ibg-addr { margin-left:.5rem; font-weight:400; font-family:monospace; color:#50575e; }
 		.ibg-chip { margin-left:.5rem; font-weight:600; color:#00701a; }
 		.ibg-more-panel label { margin-right:.35rem; }
@@ -552,6 +685,91 @@ function ibos_guides_tree_page() {
 		.ibg-tree-wrap.is-saving .ibg-tree { opacity:.7; pointer-events:none; }
 		li:target > .ibg-row { background:#fcf9e8; }
 	</style>
+	<?php
+}
+
+/**
+ * Boksen "Udgiv guiden" øverst i en guide i Oversigten.
+ *
+ * @param int   $gid   Guide.
+ * @param array $index Fra ibos_guides_tree_index().
+ */
+function ibos_guides_publish_box( $gid, $index ) {
+	$items = current_user_can( 'publish_pages' ) ? ibos_guides_pending( $gid, $index ) : array();
+	// phpcs:disable WordPress.Security.NonceVerification.Recommended -- kun visning af besked.
+	$done = isset( $_GET['ibg_published'] ) && (int) $_GET['ibg_published'] === (int) $gid && isset( $_GET['ibg_n'] ) ? array_map( 'intval', explode( '-', sanitize_text_field( wp_unslash( $_GET['ibg_n'] ) ) . '-0' ) ) : null;
+	// phpcs:enable
+	$drafts  = count( wp_list_pluck( wp_list_filter( $items, array( 'type' => 'draft' ) ), 'post' ) );
+	$changes = count( $items ) - $drafts;
+	?>
+	<div class="ibg-publish" id="ibg-publish-<?php echo (int) $gid; ?>">
+		<?php if ( $done ) : ?>
+			<p class="notice notice-success inline ibg-published" role="status" style="padding:.5em .75em">
+				<?php
+				echo esc_html(
+					sprintf(
+						/* translators: 1: "3 nye sider", 2: "1 ændring" */
+						__( 'Guiden er opdateret: %1$s og %2$s er udgivet. Borgerne får det hele som én ny version, næste gang de åbner appen med internet.', 'ibos-guides' ),
+						/* translators: %d: antal */
+						sprintf( _n( '%d ny side', '%d nye sider', $done[0], 'ibos-guides' ), $done[0] ),
+						/* translators: %d: antal */
+						sprintf( _n( '%d ændring', '%d ændringer', $done[1], 'ibos-guides' ), $done[1] )
+					)
+				);
+				?>
+			</p>
+		<?php endif; ?>
+		<?php if ( ! $items ) : ?>
+			<p class="ibg-publish-none"><?php esc_html_e( 'Alt i guiden er udgivet. Arbejd i ro: gem nye sider som kladde og ændringer i udgivne sider med "Gem uden at udgive" – så udgiver du det hele her på én gang.', 'ibos-guides' ); ?></p>
+		<?php else : ?>
+			<p><strong>
+				<?php
+				$parts = array();
+				if ( $drafts ) {
+					/* translators: %d: antal */
+					$parts[] = sprintf( _n( '%d kladde', '%d kladder', $drafts, 'ibos-guides' ), $drafts );
+				}
+				if ( $changes ) {
+					/* translators: %d: antal */
+					$parts[] = sprintf( _n( '%d ændring i en udgivet side', '%d ændringer i udgivne sider', $changes, 'ibos-guides' ), $changes );
+				}
+				/* translators: %s: fx "3 kladder og 1 ændring i en udgivet side" */
+				echo esc_html( sprintf( __( 'Venter på at blive udgivet: %s.', 'ibos-guides' ), implode( ' ' . __( 'og', 'ibos-guides' ) . ' ', $parts ) ) );
+				?>
+			</strong></p>
+			<button type="button" class="button button-primary ibg-more-toggle" aria-expanded="false" aria-controls="ibg-publish-list-<?php echo (int) $gid; ?>"><?php esc_html_e( 'Gennemse og udgiv guiden', 'ibos-guides' ); ?></button>
+			<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" class="ibg-publish-form ibg-more-panel" id="ibg-publish-list-<?php echo (int) $gid; ?>" hidden>
+				<input type="hidden" name="action" value="ibos_guides_publish_guide">
+				<input type="hidden" name="guide" value="<?php echo (int) $gid; ?>">
+				<input type="hidden" name="_wpnonce" value="<?php echo esc_attr( wp_create_nonce( 'ibos_guides_publish_guide_' . $gid ) ); ?>">
+				<fieldset>
+					<legend><?php esc_html_e( 'Vælg det, der skal udgives nu:', 'ibos-guides' ); ?></legend>
+					<ul class="ibg-publish-items">
+						<?php foreach ( $items as $it ) : ?>
+							<?php
+							$p     = $it['post'];
+							$title = '' !== $p->post_title ? $p->post_title : __( '(uden titel)', 'ibos-guides' );
+							$pid   = (int) $p->ID;
+							?>
+							<li style="margin-left:<?php echo (int) max( 0, $it['depth'] - 1 ) * 1.5; ?>rem">
+								<label>
+									<input type="checkbox" name="ids[]" value="<?php echo $pid; // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- int ?>" data-parent="<?php echo (int) $p->post_parent; ?>" checked>
+									<strong><?php echo esc_html( $title ); ?></strong>
+									– <?php echo esc_html( 'draft' === $it['type'] ? __( 'ny side (kladde)', 'ibos-guides' ) : __( 'ændring i udgivet side', 'ibos-guides' ) ); ?>
+								</label>
+								<?php if ( $it['warn'] ) : ?>
+									<span class="ibg-badge ibg-badge-warn"><?php echo esc_html( sprintf( /* translators: %d: antal */ _n( '%d ting at rette', '%d ting at rette', $it['warn'], 'ibos-guides' ), $it['warn'] ) ); ?></span>
+								<?php endif; ?>
+								<a href="<?php echo esc_url( ibos_guides_preview_url( $pid ) ); ?>" target="_blank"><?php esc_html_e( 'Forhåndsvis', 'ibos-guides' ); ?><span class="screen-reader-text"> <?php echo esc_html( $title ); ?> <?php esc_html_e( '(åbner i et nyt vindue)', 'ibos-guides' ); ?></span></a>
+							</li>
+						<?php endforeach; ?>
+					</ul>
+				</fieldset>
+				<p class="description"><?php esc_html_e( 'Sætter du flueben ved en side i et kapitel, der også er en kladde, kommer kapitlet med – ellers ville siden ikke kunne ses i appen.', 'ibos-guides' ); ?></p>
+				<p><button type="submit" class="button button-primary"><?php esc_html_e( 'Udgiv valgte', 'ibos-guides' ); ?></button></p>
+			</form>
+		<?php endif; ?>
+	</div>
 	<?php
 }
 
@@ -602,6 +820,7 @@ function ibos_guides_tree_item( $p, $depth, $gid, $index ) {
 				<?php if ( isset( $status[ $p->post_status ] ) ) : ?><span class="ibg-badge"><?php echo esc_html( $status[ $p->post_status ] ); ?></span><?php endif; ?>
 				<?php if ( '' !== (string) $p->post_password ) : ?><span class="ibg-badge"><?php esc_html_e( 'Adgangskode', 'ibos-guides' ); ?></span><?php endif; ?>
 				<?php if ( get_post_meta( $p->ID, '_ibg_hidden', true ) ) : ?><span class="ibg-badge"><?php esc_html_e( 'Skjult i menu', 'ibos-guides' ); ?></span><?php endif; ?>
+				<?php if ( ibos_guides_pending_change( $p ) ) : ?><span class="ibg-badge"><?php esc_html_e( 'Ændring venter på udgivelse', 'ibos-guides' ); ?></span><?php endif; ?>
 				<?php if ( 'publish' === $p->post_status && ! $in_app ) : ?><span class="ibg-badge ibg-badge-warn"><?php echo esc_html( 0 === $depth ? __( 'Ikke en app endnu', 'ibos-guides' ) : __( 'Ikke i appen – et niveau over er ikke udgivet', 'ibos-guides' ) ); ?></span><?php endif; ?>
 				<?php if ( $warn ) : ?><a class="ibg-badge ibg-badge-warn" href="<?php echo esc_url( get_edit_post_link( $p->ID ) ); ?>"><?php echo esc_html( sprintf( /* translators: %d: antal */ _n( '%d ting at rette', '%d ting at rette', $warn, 'ibos-guides' ), $warn ) ); ?><span class="screen-reader-text"> <?php echo esc_html( sprintf( /* translators: %s: titel */ __( 'på "%s"', 'ibos-guides' ), $title ) ); ?></span></a><?php endif; ?>
 				<?php if ( 0 === $depth && $in_app ) : ?><span class="ibg-addr"><?php echo esc_html( wp_parse_url( ibos_guides_base_url( $p ), PHP_URL_PATH ) ); ?></span><?php endif; ?>

@@ -87,6 +87,7 @@ Ja, hvis borgeren henter dem på siden "Installér appen" (på iPhone og iPad in
 * App: søgning tåler stavevarianter (æ/ø/å), uddrag ved hele ord, kapitlet i resultatets navn, sidetitel med søgningen; "Ny version" vises øverst på siden med "Opdatér nu" og "Senere"; "Vis appen til en anden" flyttet efter vejledningen; link til tilgængelighedserklæring; brødkrumme-skilletegn læses ikke op.
 * Kræver nu WordPress 6.4.
 * Forhåndsvisning i appen for redaktører: knappen "Forhåndsvis i appen" gemmer (kladder) eller autogemmer (udgivne sider) og viser siden i appens design – også kladder og ikke-udgivne ændringer. Kun for brugere, der må redigere siden; ingen cache eller service worker.
+* "Udgiv guiden i ét hug": "Gem uden at udgive" på udgivne sider (gemmes som autogem) og "Gennemse og udgiv guiden" i Oversigt, der udgiver valgte kladder og ændringer på én gang (kapitler før sider; kladder får adresse og dato; ændringer anvendes, og autogemmet slettes) – så borgerne får én ny version.
 * Video: opfordring til at hente på wifi, og spørgsmål først, når telefonen er på mobildata. Videoer gemmes i bidder på 2 MB og afspilles bid for bid, så store videoer også virker på ældre iPhones.
 
 = 1.1.2 =

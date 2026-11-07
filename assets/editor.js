@@ -245,12 +245,33 @@
     });
   }
 
-  wp.plugins.registerPlugin('ibos-guides-preview', {
-    render: function () {
-      return el(StatusInfo, { className: 'ibg-preview-row' },
-        el('div', { style: { width: '100%' } },
-          el(wp.components.Button, { variant: 'secondary', onClick: openPreview, style: { width: '100%', justifyContent: 'center' } }, 'Forhåndsvis i appen'),
-          el('p', { style: { margin: '.5em 0 0', color: '#50575e', fontSize: '12px' } }, 'Viser siden, som borgerne vil se den – også kladder og ændringer, der ikke er udgivet. Åbner i et nyt vindue.')));
+  // Udgivne sider: gem ændringen uden at borgerne ser den – den udgives senere sammen med
+  // resten af guiden ("Gennemse og udgiv guiden" i Guides → Oversigt).
+  function saveDraftChange() {
+    var ed = wp.data.select('core/editor');
+    var notices = wp.data.dispatch('core/notices');
+    if (!ed.isEditedPostDirty()) {
+      notices.createNotice('info', 'Der er ingen ændringer at gemme.', { type: 'snackbar' });
+      return;
     }
-  });
+    Promise.resolve(wp.data.dispatch('core/editor').autosave()).then(function () {
+      notices.createNotice('success', 'Ændringen er gemt, men ikke udgivet. Borgerne ser den først, når du udgiver guiden under Guides → Oversigt (eller trykker Gem her).', { id: 'ibg-draft-change', isDismissible: true });
+    }, function () {
+      notices.createNotice('error', 'Ændringen kunne ikke gemmes. Prøv igen.', { type: 'snackbar' });
+    });
+  }
+
+  function Box() {
+    var status = wp.data.useSelect(function (select) { return select('core/editor').getEditedPostAttribute('status'); }, []);
+    var small = { margin: '.5em 0 0', color: '#50575e', fontSize: '12px' };
+    return el(StatusInfo, { className: 'ibg-preview-row' },
+      el('div', { style: { width: '100%' } },
+        el(wp.components.Button, { variant: 'secondary', onClick: openPreview, style: { width: '100%', justifyContent: 'center' } }, 'Forhåndsvis i appen'),
+        el('p', { style: small }, 'Viser siden, som borgerne vil se den – også kladder og ændringer, der ikke er udgivet. Åbner i et nyt vindue.'),
+        status === 'publish' ? el(wp.element.Fragment, null,
+          el(wp.components.Button, { variant: 'secondary', onClick: saveDraftChange, style: { width: '100%', justifyContent: 'center', marginTop: '.75em' } }, 'Gem uden at udgive'),
+          el('p', { style: small }, 'Siden er udgivet, så "Gem" viser ændringen for borgerne med det samme. Arbejder du på flere sider, så gem her og udgiv det hele på én gang under Guides → Oversigt.')) : null));
+  }
+
+  wp.plugins.registerPlugin('ibos-guides-preview', { render: Box });
 })();

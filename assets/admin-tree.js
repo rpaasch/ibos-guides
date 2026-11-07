@@ -114,6 +114,24 @@
       $('#' + $(this).attr('aria-controls')).prop('hidden', false);
     }
   });
+  // "Udgiv guiden": en side kan ikke ses uden sit kapitel – sæt flueben ved forældre, og fjern
+  // det ved undersider, når en forælder fravælges.
+  $(document).on('change', '.ibg-publish-form input[name="ids[]"]', function () {
+    var $form = $(this).closest('form');
+    var box = function (id) { return $form.find('input[name="ids[]"][value="' + id + '"]'); };
+    if (this.checked) {
+      for (var p = $(this).data('parent'); p; p = box(p).data('parent')) {
+        if (!box(p).length) { break; }
+        box(p).prop('checked', true);
+      }
+    } else {
+      var off = [String(this.value)];
+      $form.find('input[name="ids[]"]').each(function () {
+        if (off.indexOf(String($(this).data('parent'))) !== -1) { $(this).prop('checked', false); off.push(String(this.value)); }
+      });
+    }
+  });
+
   $(document).on('keydown', function (e) {
     if (e.key !== 'Escape') { return; }
     var $btn = $('.ibg-more-toggle[aria-expanded="true"]');
