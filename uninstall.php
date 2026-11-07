@@ -16,7 +16,6 @@ foreach ( array( 'ibos_guides_routes', 'ibos_guides_rev', 'ibos_guides_flush' ) 
 }
 // Cachede søgeindekser, ikon-låse/-fejlmarkører og importfremdrift/-låse.
 $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE '\\_transient\\_%ibg\\_%' OR option_name LIKE '\\_transient\\_timeout\\_%ibg\\_%' OR option_name LIKE 'ibg\\_collect\\_lock\\_%'" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
-delete_option( 'ibos_guides_db' );
 $wpdb->query( "DELETE FROM {$wpdb->options} WHERE option_name LIKE 'ibos\\_guides\\_import\\_%'" ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
 // Genererede ikoner (kan genskabes).
 $up  = wp_upload_dir();
