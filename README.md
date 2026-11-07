@@ -2,7 +2,7 @@
 
 Et WordPress-plugin til tilgængelige guide-apps (PWA), fx **O&M-teknik** og **Ledsageteknik**. Indholdet redigeres som almindelige sider i WordPress. Hver guide får sin egen adresse, kan lægges på hjemmeskærmen som en app og virker uden internet.
 
-- Den færdige plugin-fil hedder **`ibos-guides.zip`**.
+- Den færdige plugin-fil hedder **`ibos-guides-<version>.zip`**, fx `ibos-guides-1.1.2.zip`, og ligger øverst i repoet.
 - Pluginet rører ikke temaet. Appen vises i sit eget, enkle design i IBOS' farver.
 - Testet på WordPress 7.1.4 (samme version som ibos.dk) med PHP 8.3.
 
@@ -10,7 +10,7 @@ Et WordPress-plugin til tilgængelige guide-apps (PWA), fx **O&M-teknik** og **L
 
 ## Installation
 
-1. **Plugins → Tilføj nyt → Upload plugin**, vælg `ibos-guides.zip`, tryk **Installér nu** og derefter **Aktivér**.
+1. **Plugins → Tilføj nyt → Upload plugin**, vælg `ibos-guides-<version>.zip`, tryk **Installér nu** og derefter **Aktivér**.
 2. Gå til **Guides → Importér**. Skriv den ønskede adresse for hver guide (fx `guides/om-teknik` eller `o-og-m`), og tryk **Importér O&M-teknik** og/eller **Importér Ledsageteknik**. Adresser, som sitet allerede bruger, afvises.
    - Billederne hentes fra GitHub (`raw.githubusercontent.com`) og lægges i mediebiblioteket med deres alt-tekster.
    - O&M-teknik har 252 billeder og tager et par minutter. Lad siden være åben imens. Afbrydes importen, fortsætter den, hvor den slap, når du trykker igen.
@@ -22,6 +22,10 @@ Et WordPress-plugin til tilgængelige guide-apps (PWA), fx **O&M-teknik** og **L
 - Serveren skal kunne hente filer fra GitHub under importen
 
 ---
+
+## Prøv det uden at installere
+
+Åbn [WordPress Playground med IBOS Guides](https://playground.wordpress.net/?blueprint-url=https://raw.githubusercontent.com/rpaasch/ibos-guides/main/playground/blueprint.json). Det er en midlertidig WordPress i browseren med pluginet installeret. Den åbner på siden Importér. Intet gemmes, når fanen lukkes.
 
 ## Sådan redigerer du
 
@@ -77,8 +81,8 @@ Adressen afvises, hvis den allerede bruges af en side, et indlæg, en anden guid
 - På et site med én installation må redaktører som standard indsætte JavaScript. Har flere redaktører adgang, så sæt `define( 'DISALLOW_UNFILTERED_HTML', true );` i wp-config.php.
 - Permalinks må ikke stå på "Simpel" (der vises en advarsel under Guides).
 
-### Opdatering fra 1.0.0
-Upload den nye zip og vælg "Erstat nuværende med uploadet". Eksisterende guides og deres adresser bevares automatisk.
+### Opdatering
+Upload den nye zip og vælg "Erstat nuværende med uploadet". Eksisterende guides og deres adresser bevares.
 
 ---
 
@@ -117,7 +121,7 @@ node tools/export-guide.mjs ../ledsageteknik ledsageteknik rpaasch/ledsageteknik
 npm run zip
 ```
 
-`export-guide.mjs` omsætter en Markdown-guide (`content/` + `site.config.json`) til WordPress-blokke i `import/<nøgle>.json`, fastlåser billedernes kilde til den angivne commit (som skal være pushet til GitHub) og gemmer en SHA-256 pr. billede. `npm run zip` pakker `ibos-guides.zip` reproducerbart ud fra den seneste commit (commit først).
+`export-guide.mjs` omsætter en Markdown-guide (`content/` + `site.config.json`) til WordPress-blokke i `import/<nøgle>.json`, fastlåser billedernes kilde til den angivne commit (som skal være pushet til GitHub) og gemmer en SHA-256 pr. billede. `npm run zip` pakker `ibos-guides-<version>.zip` reproducerbart ud fra den seneste commit (commit først). Versionen læses fra `ibos-guides.php`, gamle zip-filer slettes, og `playground/blueprint.json` peger automatisk på den nye fil.
 
 ---
 

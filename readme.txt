@@ -4,7 +4,7 @@ Tags: pwa, offline, accessibility, guide, app
 Requires at least: 6.2
 Tested up to: 7.1
 Requires PHP: 7.4
-Stable tag: 1.1.1
+Stable tag: 1.1.2
 License: GPLv2 or later
 License URI: https://www.gnu.org/licenses/gpl-2.0.html
 
@@ -42,7 +42,7 @@ Appen selv (sider, søgning, offline-cache) bruger ingen eksterne tjenester, skr
 
 == Installation ==
 
-1. Plugins → Tilføj nyt → Upload plugin → vælg `ibos-guides.zip` → Installér → Aktivér.
+1. Plugins → Tilføj nyt → Upload plugin → vælg `ibos-guides-<version>.zip` → Installér → Aktivér.
 2. Guides → Importér → importér O&M-teknik og/eller Ledsageteknik. Eller opret en ny guide under Guides → Tilføj ny.
 3. Undtag guidernes adresser (fx `/om-teknik/` og `/ledsageteknik/`) fra sidecache i cache-plugins og CDN.
 
@@ -58,6 +58,10 @@ Giv billedblokken CSS-klassen `dekorativ` (Avanceret → Ekstra CSS-klasse) og l
 
 == Changelog ==
 
+= 1.1.2 =
+* Zip-filen har versionsnummer i navnet, fx ibos-guides-1.1.2.zip.
+* Fjernet opgraderingskode til version 1.0.0, som aldrig var i brug.
+
 = 1.1.1 =
 * Selvvalgt adresse ved import (tjekkes mod sitets eksisterende adresser).
 * Adresser, som WordPress sender videre fra en sides tidligere adresse, kan ikke bruges.
@@ -67,7 +71,6 @@ Giv billedblokken CSS-klassen `dekorativ` (Avanceret → Ekstra CSS-klasse) og l
 
 = 1.1.0 =
 * Sikkerhed: resultatet af en omfattende sikkerhedsgennemgang (se README). Bl.a. lukket læk af ikke-offentligt indhold via REST og cache, apps fjernes fra telefoner, når en guide ikke længere er offentlig, fastlåst og kontrolleret import, beskyttelse mod overbelastning.
-* Opgradering fra 1.0.0 bevarer eksisterende guides og deres adresser.
 
 = 1.0.0 =
 * Første udgave.
