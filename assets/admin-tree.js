@@ -1,5 +1,5 @@
-/* Guides → Oversigt: træk og slip, bekræftelse før papirkurv. Uden JavaScript virker
-   knapperne ↑/↓ og "Mere → Flyt til" stadig. */
+/* Guides → Oversigt: træk og slip, "Mere"-paneler, bekræftelse før papirkurv og en lille
+   "✓"-besked ved den side, der lige er ændret. Knapperne ↑/↓ virker også uden mus. */
 (function ($) {
   'use strict';
   var cfg = window.ibgTree || {};
@@ -10,6 +10,16 @@
     // Tøm først, så skærmlæsere også læser den samme besked igen.
     $status.text('');
     window.setTimeout(function () { $status.text(text); }, 60);
+  }
+
+  // Synlig bekræftelse lige ved rækken (beskeden øverst kan være rullet ud af syne).
+  function chip($li, text) {
+    var $row = $li.children('.ibg-row');
+    $row.find('.ibg-chip').remove();
+    var $c = $('<span class="ibg-chip" aria-hidden="true"></span>').text('✓ ' + text);
+    $row.find('.ibg-title').append($c);
+    $li.addClass('ibg-flash');
+    window.setTimeout(function () { $c.fadeOut(400, function () { $c.remove(); }); $li.removeClass('ibg-flash'); }, 4000);
   }
 
   function fail(res) {
@@ -27,8 +37,7 @@
       .done(function (res) {
         if (!res || !res.success) { fail(res); return; }
         say(res.data.message);
-        $item.addClass('ibg-flash');
-        window.setTimeout(function () { $item.removeClass('ibg-flash'); }, 1600);
+        chip($item, cfg.saved || 'Gemt');
       })
       .fail(function (xhr) { fail(xhr && xhr.responseJSON); })
       .always(function () { $wrap.removeClass('is-saving'); });
@@ -48,8 +57,13 @@
         tolerance: 'pointer',
         placeholder: 'ibg-placeholder',
         forcePlaceholderSize: true,
-        start: function () { $wrap.addClass('ibg-dragging'); $('.ibg-more[open]').removeAttr('open'); },
-        stop: function (e, ui) { $wrap.removeClass('ibg-dragging'); save(ui.item); }
+        start: function (e, ui) { $wrap.addClass('ibg-dragging'); closeMore(); ui.item.data('ibgFrom', ui.item.parent()[0]).data('ibgIndex', ui.item.index()); },
+        stop: function (e, ui) {
+          $wrap.removeClass('ibg-dragging');
+          // Lagt tilbage samme sted: intet at gemme.
+          if (ui.item.parent()[0] === ui.item.data('ibgFrom') && ui.item.index() === ui.item.data('ibgIndex')) { return; }
+          save(ui.item);
+        }
       });
     });
   }
@@ -69,10 +83,14 @@
     } else if (f[0] === 'trashed') {
       $target = $('#ibg-undo');
     }
-    if (!$target.length) { $target = $li.find('> .ibg-row .ibg-title a').first(); }
+    if (!$target.length) { $target = $li.find('> .ibg-row .ibg-edit').first(); }
     // Efter WordPress' egne scripts (de kan ellers flytte fokus igen ved indlæsning).
     $(window).on('load', function () {
-      window.setTimeout(function () { $target.first().trigger('focus'); say(msg); }, 50);
+      window.setTimeout(function () {
+        $target.first().trigger('focus');
+        say(msg);
+        if ($li.length) { chip($li, cfg.done && cfg.done[f[0]] ? cfg.done[f[0]] : (cfg.saved || 'Gemt')); }
+      }, 50);
     });
   })();
 
@@ -81,18 +99,24 @@
     if (!window.confirm(msg)) { e.preventDefault(); }
   });
 
-  // Kun én "Mere"-menu åben ad gangen; Escape lukker den.
-  // "toggle" bobler ikke op, så der lyttes i capture-fasen.
-  document.addEventListener('toggle', function (e) {
-    var el = e.target;
-    if (el.classList && el.classList.contains('ibg-more') && el.open) {
-      $('.ibg-more[open]').not(el).removeAttr('open');
+  // "Mere": ét panel åbent ad gangen; Escape lukker og sender fokus tilbage til knappen.
+  function closeMore() {
+    $('.ibg-more-toggle[aria-expanded="true"]').each(function () {
+      $(this).attr('aria-expanded', 'false');
+      $('#' + $(this).attr('aria-controls')).prop('hidden', true);
+    });
+  }
+  $(document).on('click', '.ibg-more-toggle', function () {
+    var open = $(this).attr('aria-expanded') === 'true';
+    closeMore();
+    if (!open) {
+      $(this).attr('aria-expanded', 'true');
+      $('#' + $(this).attr('aria-controls')).prop('hidden', false);
     }
-  }, true);
+  });
   $(document).on('keydown', function (e) {
-    if (e.key === 'Escape') {
-      var $open = $('.ibg-more[open]');
-      if ($open.length) { $open.removeAttr('open').find('summary').trigger('focus'); }
-    }
+    if (e.key !== 'Escape') { return; }
+    var $btn = $('.ibg-more-toggle[aria-expanded="true"]');
+    if ($btn.length) { closeMore(); $btn.trigger('focus'); }
   });
 })(jQuery);

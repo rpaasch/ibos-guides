@@ -24,6 +24,7 @@ function ibos_guides_defaults() {
 		'logo_id'    => 0,
 		'publisher'  => 'Udgivet af IBOS – Instituttet for Blinde og Svagsynede',
 		'colophon'   => '',
+		'a11y_url'   => '',
 		'menu'       => 'tiles',
 	);
 }
@@ -54,7 +55,8 @@ function ibos_guides_settings( $guide ) {
 	if ( ! preg_match( '/^#[0-9a-fA-F]{6}\z/', $s['color'] ) ) {
 		$s['color'] = '#00656c';
 	}
-	$s['menu'] = 'list' === $s['menu'] ? 'list' : 'tiles';
+	$s['menu']     = 'list' === $s['menu'] ? 'list' : 'tiles';
+	$s['a11y_url'] = esc_url_raw( (string) $s['a11y_url'], array( 'http', 'https' ) );
 	return $s;
 }
 
@@ -357,7 +359,9 @@ function ibos_guides_resolve( $guide_id, $path ) {
 }
 
 /**
- * Version af en guides indhold. Ændres ved redigering, så appen tilbyder en ny version.
+ * Cache-version af en guide (plugin-version + revisionstællere). Ændres ved redigering, så
+ * søgeindeks og offline-liste bygges igen. Appens egen version er en kontrolsum af indholdet
+ * (se ibos_guides_service_worker()), så borgerne kun får en ny version ved reelle ændringer.
  *
  * @param int|WP_Post|null $guide Rod-side (null = kun den fælles del).
  * @return string
@@ -416,10 +420,29 @@ function ibos_guides_contrast( $a, $b ) {
  * @return string[] Advarsler på dansk.
  */
 function ibos_guides_check( $post ) {
-	$w    = array();
-	$html = (string) $post->post_content;
+	$w      = array();
+	$html   = (string) $post->post_content;
+	$parent = $post->post_parent ? get_post( $post->post_parent ) : null;
+	if ( $parent && '' !== trim( $post->post_title ) && 0 === strcasecmp( trim( $post->post_title ), trim( $parent->post_title ) ) ) {
+		$w[] = __( 'Siden har samme titel som niveauet over den. Det gør menuen og brødkrummerne svære at skelne – især med skærmlæser. Giv den en mere præcis titel.', 'ibos-guides' );
+	}
 	if ( '' === trim( $html ) ) {
 		return $w;
+	}
+	// Billeder, der er markeret som dekorative i billedblokken, skal ikke have alt-tekst.
+	$deco_src = array();
+	$walk     = function ( $blocks ) use ( &$walk, &$deco_src ) {
+		foreach ( $blocks as $b ) {
+			if ( 'core/image' === $b['blockName'] && ! empty( $b['attrs']['isDecorative'] ) && preg_match( '/\bsrc="([^"]+)"/', (string) $b['innerHTML'], $m ) ) {
+				$deco_src[ $m[1] ] = true;
+			}
+			if ( ! empty( $b['innerBlocks'] ) ) {
+				$walk( $b['innerBlocks'] );
+			}
+		}
+	};
+	if ( false !== strpos( $html, '"isDecorative":true' ) ) {
+		$walk( parse_blocks( $html ) );
 	}
 	// Gennemgås med WordPress' HTML-tag-processor: lineær tid, også på uafsluttet eller
 	// fjendtlig markup (et regulært udtryk kunne bruge kvadratisk tid).
@@ -460,7 +483,7 @@ function ibos_guides_check( $post ) {
 			++$tracks;
 		} elseif ( 'IMG' === $tag && ! is_string( $p->get_attribute( 'src' ) ) ) {
 			$empty_img = true; // Tom billedblok (fx fra skabelonen); vises ikke i appen.
-		} elseif ( 'IMG' === $tag && ! $decorative ) {
+		} elseif ( 'IMG' === $tag && ! $decorative && ! isset( $deco_src[ (string) $p->get_attribute( 'src' ) ] ) ) {
 			$alt = $p->get_attribute( 'alt' );
 			if ( ! is_string( $alt ) || '' === trim( $alt ) ) {
 				$missing = true;
@@ -483,16 +506,16 @@ function ibos_guides_check( $post ) {
 		$w[] = __( 'En video afspilles automatisk. Slå "Afspil automatisk" fra i videoblokken – lyd og bevægelse, der starter af sig selv, forstyrrer skærmlæsere og kan ikke altid stoppes.', 'ibos-guides' );
 	}
 	if ( $videos > $tracks ) {
-		$w[] = __( 'En video mangler undertekster. Vælg videoblokken → "Tekstspor" og upload en undertekstfil (.vtt) med typen "Undertekster" eller "Billedtekster". Beskriv også kort i teksten, hvad videoen viser.', 'ibos-guides' );
+		$w[] = __( 'En video mangler undertekster. Vælg videoblokken → "Tekstspor", og overfør en undertekstfil (.vtt) med typen "Undertekster" eller "Billedtekster". Beskriv også kort i teksten, hvad videoen viser.', 'ibos-guides' );
 	}
 	if ( $empty_vid ) {
-		$w[] = __( 'Der er en tom videoblok. Vælg en video (Upload eller Mediebibliotek), eller slet blokken.', 'ibos-guides' );
+		$w[] = __( 'Der er en tom videoblok. Vælg en video (Overfør eller Mediebibliotek), eller slet blokken.', 'ibos-guides' );
 	}
 	if ( $empty_img ) {
-		$w[] = __( 'Der er en tom billedblok. Vælg et billede (Upload eller Mediebibliotek), eller slet blokken. Tomme blokke vises ikke i appen.', 'ibos-guides' );
+		$w[] = __( 'Der er en tom billedblok. Vælg et billede (Overfør eller Mediebibliotek), eller slet blokken. Tomme blokke vises ikke i appen.', 'ibos-guides' );
 	}
 	if ( $missing ) {
-		$w[] = __( 'Et billede mangler alt-tekst. Skriv en beskrivelse i billedblokkens felt "Alternativ tekst" – eller giv blokken CSS-klassen "dekorativ", hvis billedet kun er pynt.', 'ibos-guides' );
+		$w[] = __( 'Et billede mangler alt-tekst. Skriv en beskrivelse i billedblokkens felt "Alternativ tekst" – eller markér billedet som dekorativt i billedblokkens indstillinger, hvis det kun er pynt.', 'ibos-guides' );
 	}
 	if ( $h1 ) {
 		$w[] = __( 'Brug ikke "Overskrift 1" i teksten – sidens titel er allerede overskrift 1. Brug H2 og nedefter.', 'ibos-guides' );

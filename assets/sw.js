@@ -20,11 +20,15 @@ const SHARED = __SHARED__;
 const CACHE = PREFIX + VERSION;
 // Videoer, borgeren selv kan hente til brug uden internet (på siden "Installér appen").
 // De ligger i en særskilt cache, som overlever nye versioner af appen.
-const VIDEOS = __VIDEOS__;
+// Adresserne normaliseres, som browseren gør (fx %20 og små bogstaver i værtsnavnet).
+const VIDEOS = __VIDEOS__.map((u) => new URL(u, SCOPE).href);
 const VIDEO_SET = new Set(VIDEOS);
+// Senest brugte video holdes i hukommelsen, så spoling ikke læser hele filen fra cachen igen.
+let videoMemo = { url: '', blob: null, type: '' };
 const VIDEO_CACHE = PREFIX + 'videos';
 
 async function removeApp() {
+  videoMemo = { url: '', blob: null, type: '' };
   for (const k of await caches.keys()) if (k.startsWith(PREFIX)) await caches.delete(k);
   await self.registration.unregister();
 }
@@ -49,7 +53,7 @@ self.addEventListener('install', (event) => {
       await Promise.all(OPTIONAL.slice(i, i + 8).map((p) => get(p).catch(() => {})));
     }
   })());
-  // Første installation aktiveres straks. Opdateringer venter, til brugeren vælger "Genindlæs".
+  // Første installation aktiveres straks. Opdateringer venter, til brugeren vælger "Opdatér nu".
 });
 
 self.addEventListener('activate', (event) => {
@@ -59,6 +63,7 @@ self.addEventListener('activate', (event) => {
       if (key.startsWith(PREFIX) && key !== CACHE && key !== VIDEO_CACHE) await caches.delete(key);
     }
     // Videoer, der ikke længere er i appen (slettet, eller må ikke længere gemmes), fjernes.
+    videoMemo = { url: '', blob: null, type: '' };
     if (await caches.has(VIDEO_CACHE)) {
       const vc = await caches.open(VIDEO_CACHE);
       for (const r of await vc.keys()) if (!VIDEO_SET.has(r.url)) await vc.delete(r);
@@ -74,28 +79,39 @@ self.addEventListener('message', (event) => {
 });
 
 // Findes appen stadig? Tjekkes i baggrunden (højst hvert minut), når siderne vises fra
-// cachen. Svarer serveren 404/410 eller sender videre et andet sted hen (plugin deaktiveret,
-// guide gjort privat/slettet, domæne flyttet), fjernes appen fra enheden.
+// cachen. Kun svaret "410 Gone" – som WordPress giver, når guiden er gjort privat, slettet
+// eller flyttet – fjerner appen fra enheden. En midlertidig fejl (plugin slået fra, 404,
+// omdirigering, serverfejl) må aldrig slette borgerens app og hentede videoer.
 let lastCheck = 0;
 async function checkStillPublished() {
   if (Date.now() - lastCheck < 60 * 1000) return;
   lastCheck = Date.now();
   try {
     const res = await fetch(SCOPE + 'manifest.webmanifest', { cache: 'no-store', credentials: 'omit', redirect: 'manual' });
-    if (res.status === 404 || res.status === 410 || res.type === 'opaqueredirect') await removeApp();
+    if (res.status === 410) await removeApp();
   } catch (e) { /* offline eller netværksfejl: gør intet */ }
 }
 
 // En hentet video – hele filen eller den bid (Range), afspilleren beder om.
 async function serveVideo(req) {
+  let blob, type;
+  // Findes videoen stadig i cachen? (Borgeren kan have fjernet den på "Installér appen".)
   const hit = await (await caches.open(VIDEO_CACHE)).match(req.url);
-  if (!hit) return fetch(req);
-  const blob = await hit.blob();
+  if (!hit) { videoMemo = { url: '', blob: null, type: '' }; return fetch(req); }
+  if (videoMemo.url === req.url && videoMemo.blob) {
+    ({ blob, type } = videoMemo);
+  } else {
+    blob = await hit.blob();
+    type = hit.headers.get('content-type') || 'video/mp4';
+    videoMemo = { url: req.url, blob, type };
+  }
   const size = blob.size;
-  const type = hit.headers.get('content-type') || 'video/mp4';
   const range = /^bytes=(\d*)-(\d*)$/.exec((req.headers.get('range') || '').trim());
   if (!range) {
     return new Response(blob, { status: 200, headers: { 'Content-Type': type, 'Content-Length': String(size), 'Accept-Ranges': 'bytes' } });
+  }
+  if (range[1] === '' && range[2] === '') {
+    return new Response(null, { status: 416, headers: { 'Content-Range': 'bytes */' + size } });
   }
   let start = range[1] === '' ? NaN : parseInt(range[1], 10);
   let end = range[2] === '' ? size - 1 : parseInt(range[2], 10);
@@ -123,12 +139,10 @@ const IMG = /^(.*?)(-\d+x\d+)?(-scaled)?\.(jpe?g|png|webp|gif|avif)$/i;
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (!ACTIVE || req.method !== 'GET') return;
-  // Video og lyd: browseren henter dem i bidder (Range). Hentede videoer afspilles fra
-  // telefonen (med spoling); alt andet går direkte til serveren.
-  if (req.headers.has('range') || req.destination === 'video' || req.destination === 'audio') {
-    if (VIDEO_SET.has(req.url)) event.respondWith(serveVideo(req));
-    return;
-  }
+  // Hentede videoer afspilles fra telefonen (med spoling) – også når filen åbnes direkte.
+  if (VIDEO_SET.has(req.url) && req.mode !== 'navigate') { event.respondWith(serveVideo(req)); return; }
+  // Anden video og lyd hentes i bidder (Range) direkte fra serveren.
+  if (req.headers.has('range') || req.destination === 'video' || req.destination === 'audio') return;
   const url = new URL(req.url);
   const inScope = req.url.startsWith(SCOPE);
   const shared = url.origin === ORIGIN && (PRECACHE_SET.has(req.url) || SHARED.some((p) => url.pathname.startsWith(p)));

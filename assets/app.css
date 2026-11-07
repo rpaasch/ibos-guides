@@ -88,6 +88,9 @@ img, svg, picture, video { max-width: 100%; height: auto; }
 .videos-offline h2 { margin-top: 0; }
 .videos-offline progress { width: 100%; height: 1rem; margin: .25rem 0 .75rem; }
 .videos-actions { display: flex; flex-wrap: wrap; gap: .75rem; }
+.videos-offline [aria-disabled="true"] { opacity: .6; cursor: progress; }
+.videos-status:focus { outline: none; }
+.videos-status:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
 picture, .image { display: block; }
 .image, figure { margin: 1.25rem 0; }
 figure img, .image img { display: block; border-radius: var(--radius); background: var(--surface); }
@@ -147,7 +150,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 }
 .breadcrumbs ol { list-style: none; margin: 0; padding: 0; display: flex; flex-wrap: wrap; }
 .breadcrumbs li { margin: 0; display: inline-flex; align-items: center; }
-.breadcrumbs li + li::before { content: "/"; margin: 0 0.4rem; color: var(--muted); }
+.breadcrumbs li + li::before { content: "/"; content: "/" / ""; margin: 0 0.4rem; color: var(--muted); } /* Skilletegnet læses ikke op. */
 .breadcrumbs ol a { display: inline-flex; align-items: center; min-height: 2.75rem; }
 .breadcrumbs [aria-current="page"] { color: var(--fg); text-decoration: none; }
 
@@ -211,6 +214,8 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 }
 
 /* Statusbesked (ny version mm.) */
+.update-banner { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin: 0 0 1rem; padding: .75rem 1rem; border: 2px solid currentColor; border-radius: var(--radius); background: var(--surface); }
+.update-banner p { margin: 0; flex: 1 1 12rem; font-weight: 700; }
 .toast {
   position: fixed; left: 50%; transform: translateX(-50%);
   bottom: calc(1rem + env(safe-area-inset-bottom)); z-index: 50;
@@ -252,6 +257,7 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
   *, *::before, *::after { animation: none !important; transition: none !important; scroll-behavior: auto !important; }
 }
 @media (forced-colors: active) {
+  .site-header { border-bottom: 1px solid CanvasText; }
   .menu--tiles li, .pager a, .toast { border: 1px solid CanvasText; }
 }
 @media print {

@@ -33,10 +33,10 @@ function ibos_guides_content( $post, $use_cache = true ) {
 	$GLOBALS['post'] = $post; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
 	setup_postdata( $post );
 	add_filter( 'render_block', 'ibos_guides_drop_empty_block', 10, 2 ); // Ubrugte felter fra skabelonen.
-	add_filter( 'render_block', 'ibos_guides_mark_offline_video', 11, 2 );
+	add_filter( 'render_block', 'ibos_guides_prepare_video', 11, 2 );
 	$html = apply_filters( 'the_content', $post->post_content ); // phpcs:ignore WordPress.NamingConventions.PrefixAllGlobals.NonPrefixedHooknameFound
 	remove_filter( 'render_block', 'ibos_guides_drop_empty_block', 10 );
-	remove_filter( 'render_block', 'ibos_guides_mark_offline_video', 11 );
+	remove_filter( 'render_block', 'ibos_guides_prepare_video', 11 );
 	// Overskrift 1 hører kun til sidens titel.
 	$html            = preg_replace( '#<(/?)h1(\s|>)#i', '<$1h2$2', $html );
 	$GLOBALS['post'] = $prev; // phpcs:ignore WordPress.WP.GlobalVariablesOverride.Prohibited
@@ -129,6 +129,7 @@ function ibos_guides_layout( $guide, $a ) {
 	<div class="wrap">
 		<?php if ( $s['colophon'] ) : ?><p><?php echo esc_html( $s['colophon'] ); ?></p><?php endif; ?>
 		<?php if ( $s['publisher'] ) : ?><p><?php echo esc_html( $s['publisher'] ); ?></p><?php endif; ?>
+		<?php if ( $s['a11y_url'] ) : ?><p><a href="<?php echo esc_url( $s['a11y_url'] ); ?>"><?php esc_html_e( 'Tilgængelighedserklæring', 'ibos-guides' ); ?></a></p><?php endif; ?>
 	</div>
 </footer>
 <div class="toast" id="app-status" role="status" aria-live="polite"></div>
@@ -155,7 +156,7 @@ function ibos_guides_breadcrumbs( $trail ) {
 			? '<li><a href="' . esc_url( $t[1] ) . '" aria-current="page">' . esc_html( $t[0] ) . '</a></li>'
 			: '<li><a href="' . esc_url( $t[1] ) . '">' . esc_html( $t[0] ) . '</a></li>';
 	}
-	return '<nav class="breadcrumbs" aria-label="' . esc_attr__( 'Brødkrummer', 'ibos-guides' ) . '"><div class="wrap">'
+	return '<nav class="breadcrumbs" aria-label="' . esc_attr__( 'Du er her', 'ibos-guides' ) . '"><div class="wrap">'
 		. '<a class="back-link" href="' . esc_url( $parent[1] ) . '"><span aria-hidden="true">‹ </span>' . esc_html__( 'Tilbage', 'ibos-guides' ) . '<span class="visually-hidden"> ' . esc_html__( 'til', 'ibos-guides' ) . ' ' . esc_html( $parent[0] ) . '</span></a>'
 		. '<ol>' . $items . '</ol></div></nav>';
 }
@@ -285,27 +286,21 @@ function ibos_guides_render_special( $guide, $which ) {
 		$n           = esc_html( $name );
 		$collected   = ibos_guides_collect( $guide );
 		$videos      = isset( $collected['videos'] ) ? $collected['videos'] : array();
-		$online_only = ! $videos && ibos_guides_has_video( $guide );
+		$online_only = ! empty( $collected['online_video'] );
 		$body = '<h1>' . esc_html( $title ) . '</h1>
 <p>' . sprintf( /* translators: %s: appens navn */ esc_html__( 'Læg %s på hjemmeskærmen, så den åbner som en app. Når appen har været åbnet én gang med internet, virker alt indhold også uden net.', 'ibos-guides' ), $n ) . ( $online_only ? ' ' . esc_html__( 'Undtagelsen er videoer: de kræver internet.', 'ibos-guides' ) : '' ) . ( $videos ? ' ' . esc_html__( 'Videoer hentes for sig – se "Videoer uden internet" herunder.', 'ibos-guides' ) : '' ) . '</p>
 <div class="install-box" id="install-box">
   <p id="install-status" role="status" aria-live="polite"></p>
   <button type="button" class="button" id="install-button" hidden>' . sprintf( /* translators: %s: appens navn */ esc_html__( 'Installér %s', 'ibos-guides' ), $n ) . '</button>
 </div>' . ibos_guides_videos_section( $videos ) . '
-<section id="share" class="share" aria-labelledby="share-heading" hidden>
-  <h2 id="share-heading">' . esc_html__( 'Del appen med en borger', 'ibos-guides' ) . '</h2>
-  <p>' . esc_html__( 'Lad borgeren scanne QR-koden med kameraet på sin telefon. Den åbner appens adresse, og derefter følges vejledningen nedenfor.', 'ibos-guides' ) . '</p>
-  <div class="qr" id="qr"></div>
-  <p>' . esc_html__( 'Adresse:', 'ibos-guides' ) . ' <span class="app-url" id="app-url"></span></p>
-  <button type="button" class="button button--secondary" id="copy-url">' . esc_html__( 'Kopiér adressen', 'ibos-guides' ) . '</button>
-</section>
+
 <h2 id="iphone">' . esc_html__( 'iPhone og iPad', 'ibos-guides' ) . '</h2>
 <ol class="steps">
-  <li>' . wp_kses( __( 'Tryk på <strong>Del</strong>. Kan du ikke se den, så tryk først på <strong>Flere</strong> (tre prikker).', 'ibos-guides' ), array( 'strong' => array() ) ) . '</li>
+  <li>' . wp_kses( __( 'Tryk på <strong>Del</strong> (en firkant med en pil, der peger op). Kan du ikke se den, så tryk først på <strong>Flere</strong> (tre prikker).', 'ibos-guides' ), array( 'strong' => array() ) ) . '</li>
   <li>' . wp_kses( __( 'Vælg <strong>Føj til hjemmeskærm</strong>.', 'ibos-guides' ), array( 'strong' => array() ) ) . '</li>
   <li>' . wp_kses( __( 'Tryk på <strong>Tilføj</strong>.', 'ibos-guides' ), array( 'strong' => array() ) ) . '</li>
 </ol>
-<p class="hint">' . esc_html__( 'Virker i Safari. Del-knappen sidder nederst på iPhone og øverst på iPad. Ligger Føj til hjemmeskærm ikke i listen, så rul ned, eller vælg Vis flere.', 'ibos-guides' ) . '</p>
+<p class="hint">' . esc_html__( 'I Safari sidder Del nederst på iPhone og øverst på iPad. I andre browsere, fx Chrome, findes Del i menuen. Ligger Føj til hjemmeskærm ikke i listen, så rul ned, eller vælg Vis flere.', 'ibos-guides' ) . '</p>
 <h2 id="android">' . esc_html__( 'Android', 'ibos-guides' ) . '</h2>
 <ol class="steps">
   <li>' . sprintf( /* translators: %s: appens navn */ wp_kses( __( 'Tryk på knappen <strong>Installér %s</strong> ovenfor, hvis den vises.', 'ibos-guides' ), array( 'strong' => array() ) ), $n ) . '</li>
@@ -313,9 +308,16 @@ function ibos_guides_render_special( $guide, $which ) {
 </ol>
 <h2 id="computer">' . esc_html__( 'Computer', 'ibos-guides' ) . '</h2>
 <ol class="steps">
-  <li>' . wp_kses( __( 'I Chrome eller Edge: brug knappen ovenfor eller installationsikonet i adresselinjen.', 'ibos-guides' ), array() ) . '</li>
+  <li>' . wp_kses( __( 'I Chrome eller Edge: brug knappen ovenfor eller installationsikonet i adresselinjen (en skærm med en pil).', 'ibos-guides' ), array() ) . '</li>
   <li>' . wp_kses( __( 'På Mac med Safari: vælg <strong>Arkiv → Føj til Dock</strong>.', 'ibos-guides' ), array( 'strong' => array() ) ) . '</li>
-</ol>';
+</ol>
+<section id="share" class="share" aria-labelledby="share-heading" hidden>
+  <h2 id="share-heading">' . esc_html__( 'Vis appen til en anden', 'ibos-guides' ) . '</h2>
+  <p>' . esc_html__( 'Vil du vise appen til en anden, fx en borger du hjælper? Den anden scanner QR-koden med kameraet på sin telefon. Så åbnes appen, og vejledningen ovenfor kan følges. Du kan også sende adressen.', 'ibos-guides' ) . '</p>
+  <div class="qr" id="qr"></div>
+  <p>' . esc_html__( 'Adresse:', 'ibos-guides' ) . ' <span class="app-url" id="app-url"></span></p>
+  <button type="button" class="button button--secondary" id="copy-url">' . esc_html__( 'Kopiér adressen', 'ibos-guides' ) . '</button>
+</section>';
 	}
 
 	return ibos_guides_layout(
@@ -341,22 +343,27 @@ function ibos_guides_videos_section( $videos ) {
 	}
 	$total = array_sum( wp_list_pluck( $videos, 's' ) );
 	$count = count( $videos );
-	$mb    = ibos_guides_mb( $total );
+	$size  = $total > 0 ? sprintf( /* translators: %s: megabyte */ __( 'ca. %s MB', 'ibos-guides' ), ibos_guides_mb( $total ) ) : '';
+	$intro = 1 === $count
+		? __( 'Appens video kræver internet, indtil du henter den.', 'ibos-guides' )
+		/* translators: %d: antal videoer */
+		: sprintf( __( 'Appens %d videoer kræver internet, indtil du henter dem.', 'ibos-guides' ), $count );
+	if ( $size ) {
+		$intro .= ' ' . ( 1 === $count
+			/* translators: %s: størrelse, fx "ca. 12 MB" */
+			? sprintf( __( 'Den fylder %s på telefonen – hent den gerne på wifi.', 'ibos-guides' ), $size )
+			/* translators: %s: størrelse, fx "ca. 12 MB" */
+			: sprintf( __( 'De fylder %s på telefonen – hent dem gerne på wifi.', 'ibos-guides' ), $size ) );
+	}
+	$button = ( 1 === $count ? __( 'Hent videoen', 'ibos-guides' ) : __( 'Hent videoer', 'ibos-guides' ) ) . ( $size ? ' (' . $size . ')' : '' );
 	return '
 <section id="videos" class="videos-offline" aria-labelledby="videos-heading" data-videos="' . esc_attr( wp_json_encode( $videos, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) ) . '" hidden>
   <h2 id="videos-heading">' . esc_html__( 'Videoer uden internet', 'ibos-guides' ) . '</h2>
-  <p>' . esc_html(
-		sprintf(
-			/* translators: 1: antal videoer, 2: megabyte */
-			_n( 'Appens video kræver internet, indtil du henter den. Den fylder ca. %2$s MB på telefonen – hent den gerne på wifi.', 'Appens %1$d videoer kræver internet, indtil du henter dem. De fylder i alt ca. %2$s MB på telefonen – hent dem gerne på wifi.', $count, 'ibos-guides' ),
-			$count,
-			$mb
-		)
-	) . '</p>
+  <p>' . esc_html( $intro ) . '</p>
   <p id="videos-status" class="videos-status" role="status" aria-live="polite"></p>
   <progress id="videos-progress" max="100" value="0" aria-label="' . esc_attr__( 'Hentning af videoer', 'ibos-guides' ) . '" hidden></progress>
   <p class="videos-actions">
-    <button type="button" class="button" id="videos-get" data-mb="' . esc_attr( $mb ) . '">' . esc_html( sprintf( /* translators: %s: megabyte */ __( 'Hent videoer (ca. %s MB)', 'ibos-guides' ), $mb ) ) . '</button>
+    <button type="button" class="button" id="videos-get">' . esc_html( $button ) . '</button>
     <button type="button" class="button button--secondary" id="videos-remove" hidden>' . esc_html__( 'Fjern hentede videoer', 'ibos-guides' ) . '</button>
   </p>
 </section>';
@@ -395,7 +402,7 @@ function ibos_guides_manifest( $guide ) {
  * Søgeindeks og liste over billeder – caches pr. version.
  *
  * @param WP_Post $guide Rod-side.
- * @return array{index: array, images: string[]}
+ * @return array{v: string, index: array, images: string[], videos: array[], extras: string[], online_video: bool, pages: string[], hash: string}
  */
 function ibos_guides_collect( $guide ) {
 	$key     = 'ibg_collect_' . $guide->ID;
@@ -458,7 +465,7 @@ function ibos_guides_build_collect( $guide, $version ) {
 	$videos = array();
 	$extras = array();
 	$pages  = array();
-	$home   = wp_parse_url( home_url(), PHP_URL_HOST );
+	$has_online_video = false;
 	try {
 		foreach ( $order as $id ) {
 			$p       = $tree['posts'][ $id ];
@@ -467,20 +474,18 @@ function ibos_guides_build_collect( $guide, $version ) {
 			hash_update( $hash, $id . '|' . get_the_title( $p ) . '|' . ibos_guides_menu_title( $p ) . '|' . $p->post_excerpt . '|' . $html );
 			if ( preg_match_all( '/<img\b[^>]*\bsrc="([^"]+)"/i', $html, $m ) ) {
 				foreach ( $m[1] as $src ) {
-					$src = html_entity_decode( $src );
-					if ( wp_parse_url( $src, PHP_URL_HOST ) === $home ) {
+					$src = ibos_guides_local_url( $src );
+					if ( '' !== $src ) {
 						$images[ $src ] = true;
 					}
 				}
 			}
-			foreach ( ibos_guides_page_videos( $p ) as $v ) {
-				if ( $v['offline'] && ! isset( $videos[ $v['src'] ] ) ) {
-					$videos[ $v['src'] ] = array(
-						'u' => $v['src'],
-						's' => $v['size'],
-						't' => html_entity_decode( get_the_title( $p ), ENT_QUOTES, 'UTF-8' ),
-					);
-					foreach ( $v['extras'] as $x ) {
+			$vids = ibos_guides_html_videos( $html );
+			$has_online_video = $has_online_video || $vids['online'];
+			foreach ( $vids['offline'] as $src => $v ) {
+				if ( ! isset( $videos[ $src ] ) ) {
+					$videos[ $src ] = array( 'u' => $v['u'], 's' => $v['s'] );
+					foreach ( $v['x'] as $x ) {
 						$extras[ $x ] = true;
 					}
 				}
@@ -502,7 +507,7 @@ function ibos_guides_build_collect( $guide, $version ) {
 	$images = array_keys( $images );
 	$videos = array_values( $videos );
 	$extras = array_keys( $extras );
-	hash_update( $hash, wp_json_encode( array( $guide->ID, $images, $pages, $videos, $extras ) ) );
+	hash_update( $hash, wp_json_encode( array( $guide->ID, $images, $pages, $videos, $extras, $has_online_video ) ) );
 	return array(
 		'v'      => $version,
 		'index'  => $index,
@@ -510,6 +515,8 @@ function ibos_guides_build_collect( $guide, $version ) {
 		// Videoer, borgeren kan hente til brug uden internet (+ undertekster og plakatbilleder).
 		'videos' => $videos,
 		'extras' => $extras,
+		// Er der videoer, der kun kan ses med internet? (Til teksten på Installér-siden.)
+		'online_video' => $has_online_video,
 		'pages'  => $pages,
 		// Hash af alt, der vises: bestemmer service workerens version (ny version kun ved reel ændring).
 		'hash'   => hash_final( $hash ),

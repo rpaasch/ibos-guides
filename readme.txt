@@ -1,7 +1,7 @@
 === IBOS Guides ===
 Contributors: rpaasch
 Tags: pwa, offline, accessibility, guide, app
-Requires at least: 6.2
+Requires at least: 6.4
 Tested up to: 7.1
 Requires PHP: 7.4
 Stable tag: 1.2.0
@@ -14,12 +14,13 @@ Tilgængelige guide-apps (PWA), der redigeres som almindelige sider i WordPress 
 
 IBOS Guides gør det muligt at lave små, tilgængelige guide-apps direkte i WordPress, fx O&M-teknik og Ledsageteknik.
 
-* Hver guide har sin egen adresse, fx `https://ibos.dk/om-teknik/`.
-* Indholdet redigeres i blok-editoren som et sidetræ: guide → kapitler → sider.
-* Appen kan installeres på hjemmeskærmen og virker offline efter første besøg.
+* Hver guide har sin egen adresse, fx `https://ibos.dk/guides/om-teknik/`.
+* Indholdet redigeres i blok-editoren som et sidetræ: guide → kapitler → sider. Guides → Oversigt viser træet med træk og slip, flyt, kopiér og papirkurv.
+* Nye sider starter med en skabelon, og mønstrene under "IBOS Guide" giver færdige byggeklodser.
+* Appen kan installeres på hjemmeskærmen og virker offline efter første besøg (skjulte sider undtaget). Videoer kan hentes til brug uden internet.
 * Bygget til VoiceOver og TalkBack: landmarks, brødkrummer, forrige/næste, søgning med skærmlæser-annoncering og IBOS' orange fokusramme.
-* Indbygget tilgængelighedstjek (alt-tekster, overskriftsniveauer, linktekster).
-* Import af O&M-teknik og Ledsageteknik med ét klik (billeder hentes fra GitHub).
+* Tilgængelighedstjek live i editoren og før udgivelse: alt-tekster, tomme blokke, undertekster, automatisk afspilning, eksempeltekst, overskriftsniveauer og linktekster.
+* Import af O&M-teknik og Ledsageteknik med ét klik (billeder hentes fra GitHub). Den importerede guide udgives med det samme.
 
 Pluginet rører ikke temaet. Appen vises i sit eget, enkle design i IBOS' farver.
 
@@ -42,9 +43,9 @@ Appen selv (sider, søgning, offline-cache) bruger ingen eksterne tjenester, skr
 
 == Installation ==
 
-1. Plugins → Tilføj nyt → Upload plugin → vælg `ibos-guides-<version>.zip` → Installér → Aktivér.
-2. Guides → Importér → importér O&M-teknik og/eller Ledsageteknik. Eller opret en ny guide under Guides → Tilføj ny.
-3. Undtag guidernes adresser (fx `/om-teknik/` og `/ledsageteknik/`) fra sidecache i cache-plugins og CDN.
+1. Plugins → Tilføj nyt plugin → Upload plugin → vælg `ibos-guides-<version>.zip` → Installér → Aktivér.
+2. Guides → Importér → importér O&M-teknik og/eller Ledsageteknik. Eller opret en ny guide under Guides → Ny guide.
+3. Undtag guidernes adresser (fx `/guides/om-teknik/`) fra sidecache i cache-plugins og CDN.
 
 == Frequently Asked Questions ==
 
@@ -54,7 +55,15 @@ Gå til Indstillinger → Permalinks og tryk "Gem ændringer". Permalinks må ik
 
 = Hvordan markerer jeg et billede som dekorativt? =
 
-Giv billedblokken CSS-klassen `dekorativ` (Avanceret → Ekstra CSS-klasse) og lad alt-teksten være tom.
+Markér det som dekorativt i billedblokkens indstillinger, og lad alt-teksten være tom. (CSS-klassen `dekorativ` virker også.)
+
+= Hvad sker der, hvis pluginet deaktiveres? =
+
+Installerede apps virker videre med det gemte indhold. De fjerner sig først, når en guide gøres privat, slettes eller får ny adresse.
+
+= Kan videoer ses uden internet? =
+
+Ja, hvis borgeren henter dem på siden "Installér appen" (på iPhone og iPad inde i den installerede app). Redaktøren kan slå det fra for den enkelte video.
 
 == Changelog ==
 
@@ -69,6 +78,14 @@ Giv billedblokken CSS-klassen `dekorativ` (Avanceret → Ekstra CSS-klasse) og l
 * Kun relevante blokke i editoren og overskrifter H2–H4. Tomme blokke vises ikke i appen.
 * Tilgængelighedstjek: video uden undertekster, video der afspilles automatisk, tomme billed-/videoblokke og glemt eksempeltekst.
 * Tilgængelighed: fokus og besked bevares efter flyt/kopiér/papirkurv i Oversigten; fokus efter hentning af videoer; navngivet fremdriftslinje; reduceret bevægelse respekteres. Testet med axe (WCAG 2.2 AA): ingen fejl.
+* Grundig gennemgang (sikkerhed, kode, brugervenlighed, tilgængelighed, offline, dokumentation) med rettelser:
+* Sikkerhed: flytning og rækkefølge ændrer kun placeringen (indholdet gemmes ikke igen og kan derfor ikke miste HTML); videolisten bygges af den viste HTML (skjulte blokke kommer ikke med); kopier beholder adgangskoden; beskeder i Oversigten viser kun guide-sider.
+* Appen fjerner kun sig selv ved "410 Gone" (guide gjort privat, slettet eller flyttet) – ikke ved midlertidige fejl som et deaktiveret plugin.
+* Video: hentning strømmes direkte til lageret, én fejlende video stopper ikke de andre, fejlsider gemmes aldrig som video, iPhone-vejledning, bekræftelse før "Fjern", spoling uden at læse hele filen igen, appen viser altid afspilningsknapper.
+* Editor: tilgængelighedstjek live og før udgivelse med "Vis blokken"; live tjek af adresse (med den fulde adresse) og af farvekontrast (for lys farve gemmes ikke); bekræftelse før "Dette er en guide" fjernes (indstillingerne huskes); dekorative billeder accepteres; advarsel om sider med samme titel som kapitlet.
+* Oversigt: "N ting at rette" og "Ikke i appen", adresse og "Åbn appen" på guiden, advarsel ved flytning til et kapitel, der er kladde, "Mere" som panel under rækken, "✓"-besked ved rækken.
+* App: søgning tåler stavevarianter (æ/ø/å), uddrag ved hele ord, kapitlet i resultatets navn, sidetitel med søgningen; "Ny version" vises øverst på siden med "Opdatér nu" og "Senere"; "Vis appen til en anden" flyttet efter vejledningen; link til tilgængelighedserklæring; brødkrumme-skilletegn læses ikke op.
+* Kræver nu WordPress 6.4.
 
 = 1.1.2 =
 * Zip-filen har versionsnummer i navnet, fx ibos-guides-1.1.2.zip.
@@ -82,7 +99,7 @@ Giv billedblokken CSS-klassen `dekorativ` (Avanceret → Ekstra CSS-klasse) og l
 * App-indstillinger flyttet op i sidepanelet med bedre forklaringer.
 
 = 1.1.0 =
-* Sikkerhed: resultatet af en omfattende sikkerhedsgennemgang (se README). Bl.a. lukket læk af ikke-offentligt indhold via REST og cache, apps fjernes fra telefoner, når en guide ikke længere er offentlig, fastlåst og kontrolleret import, beskyttelse mod overbelastning.
+* Sikkerhed: resultatet af en omfattende sikkerhedsgennemgang (se README.md i kildekoden). Bl.a. lukket læk af ikke-offentligt indhold via REST og cache, apps fjernes fra telefoner, når en guide ikke længere er offentlig, fastlåst og kontrolleret import, beskyttelse mod overbelastning.
 
 = 1.0.0 =
 * Første udgave.

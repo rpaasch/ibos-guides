@@ -89,7 +89,7 @@ function ibos_guides_post_link( $link, $post ) {
 // Flyttes en side til en anden forælder, lægges den sidst dér.
 add_filter( 'wp_insert_post_data', 'ibos_guides_parent_changed_order', 11, 2 );
 function ibos_guides_parent_changed_order( $data, $postarr ) {
-	if ( IBOS_GUIDES_CPT !== $data['post_type'] || empty( $postarr['ID'] ) || ! empty( $GLOBALS['ibos_guides_placing'] ) ) {
+	if ( IBOS_GUIDES_CPT !== $data['post_type'] || empty( $postarr['ID'] ) ) {
 		return $data;
 	}
 	$old = get_post( (int) $postarr['ID'] );
@@ -103,27 +103,14 @@ function ibos_guides_parent_changed_order( $data, $postarr ) {
 
 add_action( 'add_meta_boxes_' . IBOS_GUIDES_CPT, 'ibos_guides_meta_boxes' );
 function ibos_guides_meta_boxes( $post ) {
-	// App-indstillinger øverst i sidepanelet (i blok-editoren er "normal"-bokse gemt i en
+	// Placering og App-indstillinger øverst i sidepanelet (i blok-editoren er "normal"-bokse gemt i en
 	// sammenklappet bjælke nederst, hvor de er svære at finde).
 	add_meta_box( 'ibg-place', __( 'Placering', 'ibos-guides' ), 'ibos_guides_box_place', null, 'side', 'high' );
 	if ( ! $post->post_parent ) {
 		add_meta_box( 'ibg-settings', __( 'App-indstillinger', 'ibos-guides' ), 'ibos_guides_box_settings', null, 'side', 'high' );
 	}
-	add_meta_box( 'ibg-check', __( 'Tilgængelighedstjek', 'ibos-guides' ), 'ibos_guides_box_check', null, 'side', 'default' );
+	// Tilgængelighedstjekket vises live i editoren (assets/editor.js) – ikke som metaboks.
 	add_meta_box( 'ibg-page', __( 'Visning', 'ibos-guides' ), 'ibos_guides_box_page', null, 'side', 'default' );
-}
-
-function ibos_guides_box_check( $post ) {
-	$w = ibos_guides_check( $post );
-	if ( ! $w ) {
-		echo '<p>' . esc_html__( 'Ingen problemer fundet ved sidste gem.', 'ibos-guides' ) . '</p>';
-		return;
-	}
-	echo '<ul style="list-style:disc;padding-left:1.2em">';
-	foreach ( $w as $msg ) {
-		echo '<li>' . esc_html( $msg ) . '</li>';
-	}
-	echo '</ul><p><em>' . esc_html__( 'Tjekket opdateres, når siden gemmes og genindlæses.', 'ibos-guides' ) . '</em></p>';
 }
 
 function ibos_guides_box_page( $post ) {
@@ -153,6 +140,12 @@ function ibos_guides_box_settings( $post ) {
 	// Konflikter afvises ved gem (ibos_guides_slug_problem). En side, der oprettes senere på
 	// samme adresse, opdages først her – derfor advares der stadig.
 	$conflict = $s['slug'] ? get_page_by_path( $s['slug'], OBJECT, array( 'page', 'post' ) ) : null;
+	// Er fluebenet fjernet tidligere, huskes adresse og farve, så de kommer igen, hvis det sættes.
+	$off = get_post_meta( $post->ID, '_ibg_off', true );
+	if ( is_array( $off ) ) {
+		$s['slug']  = '' === $s['slug'] && ! empty( $off['slug'] ) ? ibos_guides_clean_slug( $off['slug'] ) : $s['slug'];
+		$s['color'] = ! metadata_exists( 'post', $post->ID, '_ibg_color' ) && ! empty( $off['color'] ) ? $off['color'] : $s['color'];
+	}
 	if ( '' === $s['slug'] ) {
 		$s['slug'] = ibos_guides_clean_slug( $post->post_name ? $post->post_name : sanitize_title( $post->post_title ) );
 	}
@@ -160,9 +153,9 @@ function ibos_guides_box_settings( $post ) {
 	wp_enqueue_media();
 	?>
 	<?php $is_guide = metadata_exists( 'post', $post->ID, '_ibg_color' ) || 'auto-draft' === $post->post_status; ?>
-	<p><?php esc_html_e( 'Her bestemmer du, hvordan appen ser ud, og hvor den ligger. Guidens titel er appens navn, og teksten i editoren er appens forside. Ændringer gemmes, når du trykker Opdatér, og brugerne får dem næste gang de åbner appen med internet.', 'ibos-guides' ); ?></p>
+	<p><?php esc_html_e( 'Her bestemmer du, hvordan appen ser ud, og hvor den ligger. Guidens titel er appens navn, og teksten i editoren er appens forside. Ændringer gemmes, når du trykker Gem, og brugerne får dem næste gang de åbner appen med internet.', 'ibos-guides' ); ?></p>
 	<p>
-		<label><input type="checkbox" name="ibg_is_guide" value="1" <?php checked( $is_guide ); ?>>
+		<label><input type="checkbox" name="ibg_is_guide" id="ibg-is-guide" value="1" <?php checked( $is_guide ); ?> data-was="<?php echo $is_guide && 'auto-draft' !== $post->post_status ? '1' : ''; ?>">
 		<strong><?php esc_html_e( 'Dette er en guide (en app med egen adresse)', 'ibos-guides' ); ?></strong></label>
 	</p>
 	<p class="description"><?php esc_html_e( 'Sæt flueben, når denne side skal være forsiden i en app, som borgere kan åbne og lægge på hjemmeskærmen. Siderne under den bliver appens kapitler og sider. Uden flueben er siden ikke en app og vises ingen steder.', 'ibos-guides' ); ?></p>
@@ -170,15 +163,15 @@ function ibos_guides_box_settings( $post ) {
 		<div class="ibg-field" style="margin:1.25em 0;padding-top:1em;border-top:1px solid #ddd">
 			<p style="margin:0 0 .35em"><strong><label for="ibg-slug"><?php esc_html_e( 'Adresse', 'ibos-guides' ); ?></label></strong></p>
 			
-				<code style="display:block;margin-bottom:.25em;word-break:break-all"><?php echo esc_html( home_url( '/' ) ); ?>…/</code>
-				<input type="text" id="ibg-slug" name="ibg_slug" class="widefat" value="<?php echo esc_attr( $s['slug'] ); ?>" aria-describedby="ibg-slug-help">
+				<input type="text" id="ibg-slug" name="ibg_slug" class="widefat" value="<?php echo esc_attr( $s['slug'] ); ?>" aria-describedby="ibg-slug-live ibg-slug-help" data-post="<?php echo (int) $post->ID; ?>" data-nonce="<?php echo esc_attr( wp_create_nonce( 'ibos_guides_slug_check' ) ); ?>">
+				<p id="ibg-slug-live" class="ibg-live" aria-live="polite" style="margin:.35em 0;word-break:break-all"><?php echo esc_html( sprintf( /* translators: %s: adresse */ __( 'Appens adresse: %s', 'ibos-guides' ), home_url( '/' . $s['slug'] . '/' ) ) ); ?></p>
 				<p class="description" id="ibg-slug-help"><?php esc_html_e( 'Webadressen, som borgerne åbner – og som QR-koden på siden "Installér appen" peger på. Brug små bogstaver, tal og bindestreg; brug skråstreg til at samle flere guides, fx "guides/om-teknik". Vælg med omhu: ændrer du adressen senere, forsvinder appen fra borgernes hjemmeskærm, og de skal installere den igen. Adresser, som hjemmesiden allerede bruger, bliver afvist.', 'ibos-guides' ); ?></p>
 				<?php $slug_error = get_post_meta( $post->ID, '_ibg_slug_error', true ); ?>
 				<?php if ( $slug_error ) : ?>
-					<p class="notice notice-error inline" style="padding:.5em"><?php echo esc_html( $slug_error ); ?></p>
+					<p class="notice notice-error inline ibg-saved-error" style="padding:.5em"><?php echo esc_html( $slug_error ); ?></p>
 				<?php endif; ?>
 				<?php if ( $conflict ) : ?>
-					<p class="notice notice-warning inline" style="padding:.5em"><?php esc_html_e( 'Der findes en almindelig side med samme adresse. Appen vises i stedet for den.', 'ibos-guides' ); ?></p>
+					<p class="notice notice-warning inline" style="padding:.5em"><?php esc_html_e( 'En side på sitet har fået samme adresse som guiden. Appen vises i stedet for siden – giv en af dem en anden adresse.', 'ibos-guides' ); ?></p>
 				<?php endif; ?>
 			
 		</div>
@@ -189,17 +182,21 @@ function ibos_guides_box_settings( $post ) {
 		</div>
 		<div class="ibg-field" style="margin:1.25em 0;padding-top:1em;border-top:1px solid #ddd">
 			<p style="margin:0 0 .35em"><strong><label for="ibg-color"><?php esc_html_e( 'Temafarve', 'ibos-guides' ); ?></label></strong></p>
-			<input type="color" id="ibg-color" name="ibg_color" value="<?php echo esc_attr( $s['color'] ); ?>" aria-describedby="ibg-color-help">
-				<p class="description" id="ibg-color-help">
+			<p style="display:flex;gap:.5em;align-items:center;margin:0">
+				<input type="color" id="ibg-color" value="<?php echo esc_attr( $s['color'] ); ?>" aria-label="<?php esc_attr_e( 'Vælg farve', 'ibos-guides' ); ?>">
+				<input type="text" id="ibg-color-hex" name="ibg_color" value="<?php echo esc_attr( $s['color'] ); ?>" size="8" maxlength="7" pattern="#[0-9a-fA-F]{6}" aria-label="<?php esc_attr_e( 'Farvekode, fx #00656c', 'ibos-guides' ); ?>" aria-describedby="ibg-color-live ibg-color-help">
+			</p>
+			<p id="ibg-color-live" class="ibg-live" aria-live="polite" style="margin:.35em 0">
 				<?php
 				/* translators: %s: kontrastforhold */
-				echo esc_html( sprintf( __( 'Farven på bjælken øverst i appen og på telefonens statuslinje. Teksten i bjælken er hvid, så farven skal være mørk nok til, at svagsynede kan læse den: kontrasten skal være mindst 4,5:1 – lige nu er den %s:1. IBOS-farver: #00656c (petrol) og #00628b (blå).', 'ibos-guides' ), number_format_i18n( $contrast, 1 ) ) );
+				echo esc_html( sprintf( __( 'Kontrast til den hvide tekst: %s:1', 'ibos-guides' ), number_format_i18n( $contrast, 1 ) ) . ( $contrast < 4.5 ? ' – ' . __( 'for lys. Vælg en mørkere farve; ellers gemmes den ikke.', 'ibos-guides' ) : ' – ' . __( 'god.', 'ibos-guides' ) ) );
 				?>
-				</p>
-				<?php if ( $contrast < 4.5 ) : ?>
-					<p class="notice notice-error inline" style="padding:.5em"><?php esc_html_e( 'Farven er for lys til hvid tekst. Vælg en mørkere farve.', 'ibos-guides' ); ?></p>
-				<?php endif; ?>
-			
+			</p>
+			<p class="description" id="ibg-color-help"><?php esc_html_e( 'Farven på bjælken øverst i appen. Teksten i bjælken er hvid, så farven skal være mørk nok til, at svagsynede kan læse den (kontrast mindst 4,5:1). IBOS-farver: #00656c (petrol) og #00628b (blå).', 'ibos-guides' ); ?></p>
+			<?php $color_error = get_post_meta( $post->ID, '_ibg_color_error', true ); ?>
+			<?php if ( $color_error ) : ?>
+				<p class="notice notice-error inline ibg-saved-error" style="padding:.5em"><?php echo esc_html( $color_error ); ?></p>
+			<?php endif; ?>
 		</div>
 		<?php
 		foreach ( array(
@@ -214,8 +211,8 @@ function ibos_guides_box_settings( $post ) {
 				<div class="ibg-media" data-target="ibg-<?php echo esc_attr( $key ); ?>">
 					<img src="<?php echo esc_url( $img ); ?>" alt="" style="max-width:96px;max-height:96px;display:<?php echo $img ? 'block' : 'none'; ?>;background:<?php echo esc_attr( $s['color'] ); ?>">
 					<input type="hidden" id="ibg-<?php echo esc_attr( $key ); ?>" name="ibg_<?php echo esc_attr( $key ); ?>" value="<?php echo esc_attr( $s[ $key ] ); ?>">
-					<button type="button" class="button ibg-media-choose"><?php esc_html_e( 'Vælg billede', 'ibos-guides' ); ?></button>
-					<button type="button" class="button-link ibg-media-remove"><?php esc_html_e( 'Fjern', 'ibos-guides' ); ?></button>
+					<button type="button" class="button ibg-media-choose" aria-label="<?php echo esc_attr( sprintf( /* translators: %s: App-ikon/Logo */ __( 'Vælg billede: %s', 'ibos-guides' ), $info[0] ) ); ?>"><?php esc_html_e( 'Vælg billede', 'ibos-guides' ); ?></button>
+					<button type="button" class="button-link ibg-media-remove" aria-label="<?php echo esc_attr( sprintf( /* translators: %s: App-ikon/Logo */ __( 'Fjern %s', 'ibos-guides' ), $info[0] ) ); ?>"<?php echo $img ? '' : ' hidden'; ?>><?php esc_html_e( 'Fjern', 'ibos-guides' ); ?></button>
 				</div>
 				<p class="description"><?php echo esc_html( $info[1] ); ?></p>
 			
@@ -230,6 +227,11 @@ function ibos_guides_box_settings( $post ) {
 			<p style="margin:0 0 .35em"><strong><label for="ibg-colophon"><?php esc_html_e( 'Kolofon', 'ibos-guides' ); ?></label></strong></p>
 			<input type="text" id="ibg-colophon" name="ibg_colophon" class="widefat" value="<?php echo esc_attr( $s['colophon'] ); ?>" aria-describedby="ibg-colophon-help">
 				<p class="description" id="ibg-colophon-help"><?php esc_html_e( 'Valgfri ekstra linje nederst på alle sider, fx hvem der har skrevet indholdet, eller hvornår det sidst er gennemgået.', 'ibos-guides' ); ?></p>
+		</div>
+		<div class="ibg-field" style="margin:1.25em 0;padding-top:1em;border-top:1px solid #ddd">
+			<p style="margin:0 0 .35em"><strong><label for="ibg-a11y"><?php esc_html_e( 'Tilgængelighedserklæring', 'ibos-guides' ); ?></label></strong></p>
+			<input type="url" id="ibg-a11y" name="ibg_a11y_url" class="widefat" value="<?php echo esc_attr( $s['a11y_url'] ); ?>" placeholder="https://" aria-describedby="ibg-a11y-help">
+			<p class="description" id="ibg-a11y-help"><?php esc_html_e( 'Link til IBOS\' tilgængelighedserklæring (fx på was.digst.dk). Vises nederst på alle sider i appen. Offentlige myndigheder skal have en.', 'ibos-guides' ); ?></p>
 		</div>
 		<div class="ibg-field" style="margin:1.25em 0;padding-top:1em;border-top:1px solid #ddd">
 			<p style="margin:0 0 .35em"><strong><label for="ibg-menu"><?php esc_html_e( 'Menuvisning', 'ibos-guides' ); ?></label></strong></p>
@@ -250,12 +252,47 @@ function ibos_guides_admin_assets( $hook ) {
 	if ( ! $screen || IBOS_GUIDES_CPT !== $screen->post_type ) {
 		return;
 	}
-	wp_enqueue_script( 'ibos-guides-admin', plugins_url( 'assets/admin.js', IBOS_GUIDES_FILE ), array( 'jquery' ), IBOS_GUIDES_VERSION, true );
+	wp_enqueue_script( 'ibos-guides-admin', plugins_url( 'assets/admin.js', IBOS_GUIDES_FILE ), array( 'jquery', 'wp-a11y' ), IBOS_GUIDES_VERSION, true );
+	wp_add_inline_style( 'wp-admin', '.ibg-live.ibg-bad{color:#b32d2e;font-weight:600}' );
+	wp_localize_script(
+		'ibos-guides-admin',
+		'ibgAdmin',
+		array(
+			'ajax'    => admin_url( 'admin-ajax.php' ),
+			'home'    => home_url( '/' ),
+			'untick'  => __( 'Når fluebenet fjernes og siden gemmes, er siden ikke længere en app. Appen forsvinder fra borgernes telefoner, næste gang de åbner den med internet. Adresse og farve huskes, hvis du sætter fluebenet igen. Fortsæt?', 'ibos-guides' ),
+			'address' => __( 'Appens adresse: %s', 'ibos-guides' ),
+			'removed' => __( 'Billedet er fjernet. Husk at gemme.', 'ibos-guides' ),
+		)
+	);
 }
 
 /* ---------------------------------------------------------------------------
  * Gem
  * ------------------------------------------------------------------------- */
+
+/* Live tjek af adressen, mens redaktøren skriver (samme regler som ved gem). */
+add_action( 'wp_ajax_ibos_guides_slug_check', 'ibos_guides_ajax_slug_check' );
+function ibos_guides_ajax_slug_check() {
+	check_ajax_referer( 'ibos_guides_slug_check' );
+	$post_id = isset( $_POST['post'] ) ? absint( $_POST['post'] ) : 0;
+	if ( ! $post_id || ! current_user_can( 'edit_post', $post_id ) ) {
+		wp_send_json_error();
+	}
+	$slug = ibos_guides_clean_slug( sanitize_text_field( ibos_guides_post_str( 'slug' ) ) );
+	if ( '' === $slug ) {
+		wp_send_json_success( array( 'ok' => false, 'message' => __( 'Skriv en adresse, fx "guides/hvid-stok".', 'ibos-guides' ) ) );
+	}
+	$problem = ibos_guides_slug_problem( $slug, $post_id );
+	wp_send_json_success(
+		array(
+			'ok'      => '' === $problem,
+			'slug'    => $slug,
+			'url'     => home_url( '/' . $slug . '/' ),
+			'message' => $problem ? $problem . ' ' . __( 'Adressen bliver ikke gemt.', 'ibos-guides' ) : '',
+		)
+	);
+}
 
 /**
  * Er adressen problematisk? Returnerer en fejltekst eller ''.
@@ -347,10 +384,22 @@ function ibos_guides_save( $post_id, $post ) {
 		update_post_meta( $post_id, '_ibg_child_menu', in_array( $cm, array( 'tiles', 'list' ), true ) ? $cm : '' );
 
 		if ( ! $post->post_parent && isset( $_POST['ibg_slug'] ) && empty( $_POST['ibg_is_guide'] ) ) {
-			// Ikke (længere) en guide: fjern markøren og adressen, så siden ikke serveres som app.
+			// Ikke (længere) en guide: fjern markøren og adressen, så siden ikke serveres som app –
+			// men husk dem, så de kommer igen, hvis fluebenet sættes igen.
+			if ( metadata_exists( 'post', $post_id, '_ibg_color' ) ) {
+				update_post_meta(
+					$post_id,
+					'_ibg_off',
+					array(
+						'slug'  => (string) get_post_meta( $post_id, '_ibg_slug', true ),
+						'color' => (string) get_post_meta( $post_id, '_ibg_color', true ),
+					)
+				);
+			}
 			delete_post_meta( $post_id, '_ibg_color' );
 			delete_post_meta( $post_id, '_ibg_slug' );
 			delete_post_meta( $post_id, '_ibg_slug_error' );
+			delete_post_meta( $post_id, '_ibg_color_error' );
 		} elseif ( ! $post->post_parent && isset( $_POST['ibg_slug'] ) ) {
 			$slug = ibos_guides_clean_slug( sanitize_text_field( ibos_guides_post_str( 'ibg_slug' ) ) );
 			if ( '' === $slug ) {
@@ -365,7 +414,17 @@ function ibos_guides_save( $post_id, $post ) {
 				update_post_meta( $post_id, '_ibg_slug', $slug );
 			}
 			update_post_meta( $post_id, '_ibg_short_name', sanitize_text_field( ibos_guides_post_str( 'ibg_short_name' ) ) );
-			$color = sanitize_hex_color( ibos_guides_post_str( 'ibg_color' ) );
+			delete_post_meta( $post_id, '_ibg_off' );
+			$color = sanitize_hex_color( trim( ibos_guides_post_str( 'ibg_color' ) ) );
+			$old   = (string) get_post_meta( $post_id, '_ibg_color', true );
+			if ( $color && ibos_guides_contrast( $color, '#ffffff' ) < 4.5 ) {
+				// For lys til hvid tekst: behold den hidtidige farve, og forklar hvorfor.
+				/* translators: %s: farvekode */
+				update_post_meta( $post_id, '_ibg_color_error', sprintf( __( 'Farven %s blev ikke gemt: den er for lys til den hvide tekst i bjælken. Vælg en mørkere farve.', 'ibos-guides' ), $color ) );
+				$color = $old;
+			} else {
+				delete_post_meta( $post_id, '_ibg_color_error' );
+			}
 			update_post_meta( $post_id, '_ibg_color', $color ? $color : '#00656c' );
 			// Ikon og logo skal være billeder, som brugeren selv må se.
 			foreach ( array( 'icon_id', 'logo_id' ) as $key ) {
@@ -377,6 +436,7 @@ function ibos_guides_save( $post_id, $post ) {
 			}
 			update_post_meta( $post_id, '_ibg_publisher', sanitize_text_field( ibos_guides_post_str( 'ibg_publisher' ) ) );
 			update_post_meta( $post_id, '_ibg_colophon', sanitize_text_field( ibos_guides_post_str( 'ibg_colophon' ) ) );
+			update_post_meta( $post_id, '_ibg_a11y_url', esc_url_raw( ibos_guides_post_str( 'ibg_a11y_url' ), array( 'http', 'https' ) ) );
 			$menu = sanitize_key( ibos_guides_post_str( 'ibg_menu' ) );
 			update_post_meta( $post_id, '_ibg_menu', 'list' === $menu ? 'list' : 'tiles' );
 		}
@@ -422,15 +482,26 @@ function ibos_guides_trash_children( $post_id ) {
 add_action( 'untrashed_post', 'ibos_guides_untrash_children' );
 function ibos_guides_untrash_children( $post_id ) {
 	$kids = get_posts( array( 'post_type' => IBOS_GUIDES_CPT, 'post_status' => 'trash', 'posts_per_page' => -1, 'fields' => 'ids', 'meta_key' => '_ibg_trashed_with', 'meta_value' => (int) $post_id ) ); // phpcs:ignore WordPress.DB.SlowDBQuery
+	$GLOBALS['ibos_guides_untrashing_children'] = true; // Forælderen gendannes netop nu.
 	foreach ( $kids as $kid ) {
 		delete_post_meta( $kid, '_ibg_trashed_with' );
 		wp_untrash_post( $kid );
 	}
+	$GLOBALS['ibos_guides_untrashing_children'] = false;
 }
 // Gendannede sider skal have deres tidligere status (ikke "kladde", som WP ellers sætter).
 add_filter( 'wp_untrash_post_status', 'ibos_guides_untrash_status', 10, 3 );
 function ibos_guides_untrash_status( $new_status, $post_id, $previous_status ) {
-	return IBOS_GUIDES_CPT === get_post_type( $post_id ) ? $previous_status : $new_status;
+	if ( IBOS_GUIDES_CPT !== get_post_type( $post_id ) ) {
+		return $new_status;
+	}
+	// Ligger forælderen stadig i papirkurven, bliver siden en kladde – ellers ville den være
+	// "udgivet" uden at kunne ses nogen steder.
+	$parent = wp_get_post_parent_id( $post_id );
+	if ( $parent && 'trash' === get_post_status( $parent ) && empty( $GLOBALS['ibos_guides_untrashing_children'] ) ) {
+		return 'draft';
+	}
+	return $previous_status;
 }
 // Permanent sletning af en guide eller et kapitel: slet også undersiderne, så de ikke bliver
 // forældreløse sider på øverste niveau.

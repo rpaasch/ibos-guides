@@ -186,7 +186,7 @@ function ibos_guides_patterns() {
 			__( 'Godt at vide', 'ibos-guides' ),
 			__( 'En lille overskrift med et kort råd eller en advarsel.', 'ibos-guides' ),
 			array(
-				ibos_guides_tpl_heading( __( 'Godt at vide', 'ibos-guides' ), 3 ),
+				ibos_guides_tpl_heading( __( 'Godt at vide', 'ibos-guides' ) ),
 				ibos_guides_tpl_paragraph( __( 'Et kort råd, en undtagelse eller en advarsel.', 'ibos-guides' ) ),
 			),
 		),
@@ -232,7 +232,7 @@ function ibos_guides_editor_assets() {
 	if ( ! $screen || IBOS_GUIDES_CPT !== $screen->post_type ) {
 		return;
 	}
-	wp_enqueue_script( 'ibos-guides-editor', plugins_url( 'assets/editor.js', IBOS_GUIDES_FILE ), array( 'wp-hooks', 'wp-compose', 'wp-element', 'wp-components', 'wp-block-editor', 'wp-data', 'wp-core-data' ), IBOS_GUIDES_VERSION, false );
+	wp_enqueue_script( 'ibos-guides-editor', plugins_url( 'assets/editor.js', IBOS_GUIDES_FILE ), array( 'wp-hooks', 'wp-compose', 'wp-element', 'wp-components', 'wp-block-editor', 'wp-data', 'wp-core-data', 'wp-plugins', 'wp-editor', 'wp-edit-post' ), IBOS_GUIDES_VERSION, false );
 }
 
 /* ---------------------------------------------------------------------------
@@ -251,6 +251,10 @@ function ibos_guides_drop_empty_block( $html, $block ) {
 		case 'core/paragraph':
 		case 'core/heading':
 		case 'core/list-item':
+			// Eksempeltekst fra et mønster ("[✎ …]") vises aldrig for borgerne.
+			if ( ibos_guides_has_sample( $html ) ) {
+				return '';
+			}
 			return ( '' === trim( html_entity_decode( wp_strip_all_tags( $html ), ENT_QUOTES, 'UTF-8' ), " \t\n\r\0\x0B\xC2\xA0" ) && false === stripos( $html, '<img' ) ) ? '' : $html;
 		case 'core/list':
 			return false === stripos( $html, '<li' ) ? '' : $html;
@@ -262,25 +266,12 @@ function ibos_guides_drop_empty_block( $html, $block ) {
 	return $html;
 }
 
-/**
- * Har guiden en video på en udgivet side? (Til teksten om brug uden internet.)
- *
- * @param WP_Post $guide Guiden.
- * @return bool
- */
-function ibos_guides_has_video( $guide ) {
-	$index = ibos_guides_tree_index();
-	foreach ( ibos_guides_reading_order( $guide->ID, $index ) as $id ) {
-		$p = $index['posts'][ $id ];
-		if ( 'publish' === $p->post_status && false !== strpos( $p->post_content, '<!-- wp:video' ) ) {
-			return true;
-		}
-	}
-	return false;
-}
-
 /* ---------------------------------------------------------------------------
  * Video offline: hvilke videoer må borgeren hente til brug uden internet?
+ *
+ * Listen bygges af den HTML, appen faktisk viser (renderet som anonym besøgende). Så kommer
+ * skjulte blokke ("Skjul blok"), blokke fjernet af andre plugins og videoer i ikke-udgivne
+ * sider aldrig med – og videoer i synkroniserede mønstre kommer med.
  * ------------------------------------------------------------------------- */
 
 /**
@@ -293,81 +284,127 @@ function ibos_guides_video_offline_allowed( $block ) {
 	return ! ( isset( $block['attrs']['ibgOffline'] ) && false === $block['attrs']['ibgOffline'] );
 }
 
-/**
- * Videoer på en side: kilde, størrelse, undertekster og plakatbillede.
- *
- * @param WP_Post $post Side.
- * @return array[] array( 'src', 'offline', 'size', 'extras' => string[] )
- */
-function ibos_guides_page_videos( $post ) {
-	if ( false === strpos( (string) $post->post_content, '<!-- wp:video' ) ) {
-		return array();
+// Valget "Kan hentes til brug uden internet" registreres også på serveren, så det ikke
+// forsvinder, når en video i et synkroniseret mønster redigeres et andet sted end i en guide.
+add_filter( 'register_block_type_args', 'ibos_guides_video_attr', 10, 2 );
+function ibos_guides_video_attr( $args, $name ) {
+	if ( 'core/video' === $name ) {
+		$args['attributes']['ibgOffline'] = array(
+			'type'    => 'boolean',
+			'default' => true,
+		);
 	}
-	$home  = wp_parse_url( home_url(), PHP_URL_HOST );
-	$out   = array();
-	$walk  = function ( $blocks ) use ( &$walk, &$out, $home ) {
-		foreach ( $blocks as $b ) {
-			if ( 'core/video' === $b['blockName'] ) {
-				$p      = new WP_HTML_Tag_Processor( (string) $b['innerHTML'] );
-				$src    = '';
-				$extras = array();
-				while ( $p->next_tag() ) {
-					$tag = $p->get_tag();
-					if ( 'VIDEO' === $tag ) {
-						$src    = (string) $p->get_attribute( 'src' );
-						$poster = $p->get_attribute( 'poster' );
-						if ( is_string( $poster ) && '' !== $poster ) {
-							$extras[] = $poster;
-						}
-					} elseif ( 'TRACK' === $tag && is_string( $p->get_attribute( 'src' ) ) ) {
-						$extras[] = $p->get_attribute( 'src' );
-					}
-				}
-				// Kun filer fra sitet selv (Medier) kan gemmes offline.
-				if ( '' !== $src && wp_parse_url( $src, PHP_URL_HOST ) === $home ) {
-					$id   = ! empty( $b['attrs']['id'] ) ? (int) $b['attrs']['id'] : attachment_url_to_postid( $src );
-					$file = $id ? get_attached_file( $id ) : '';
-					$out[] = array(
-						'src'     => $src,
-						'offline' => ibos_guides_video_offline_allowed( $b ),
-						'size'    => ( $file && is_readable( $file ) ) ? (int) filesize( $file ) : 0,
-						'extras'  => array_values(
-							array_filter(
-								$extras,
-								function ( $u ) use ( $home ) {
-									return wp_parse_url( $u, PHP_URL_HOST ) === $home;
-								}
-							)
-						),
-					);
-				}
-			}
-			if ( ! empty( $b['innerBlocks'] ) ) {
-				$walk( $b['innerBlocks'] );
-			}
-		}
-	};
-	$walk( parse_blocks( $post->post_content ) );
-	return $out;
+	return $args;
 }
 
 /**
- * Markér videoer, der kan hentes offline, så appen kan sige det til borgeren.
+ * Absolut adresse på en fil fra sitet selv (samme skema, vært og port), ellers ''.
+ *
+ * @param string $url Adresse fra indholdet (kan være relativ).
+ * @return string
+ */
+function ibos_guides_local_url( $url ) {
+	$url = trim( html_entity_decode( (string) $url, ENT_QUOTES | ENT_HTML5, 'UTF-8' ) );
+	if ( '' === $url || 0 === strpos( $url, 'data:' ) ) {
+		return '';
+	}
+	$abs  = WP_Http::make_absolute_url( $url, home_url( '/' ) );
+	$home = wp_parse_url( home_url( '/' ) );
+	$u    = wp_parse_url( $abs );
+	if ( ! $u || empty( $u['host'] ) || empty( $u['scheme'] ) ) {
+		return '';
+	}
+	$port = function ( $p ) {
+		return isset( $p['port'] ) ? (int) $p['port'] : ( 'https' === strtolower( $p['scheme'] ) ? 443 : 80 );
+	};
+	$same = strtolower( $u['scheme'] ) === strtolower( $home['scheme'] )
+		&& strtolower( $u['host'] ) === strtolower( $home['host'] )
+		&& $port( $u ) === $port( $home );
+	return $same ? $abs : '';
+}
+
+/**
+ * Videoblokken i appen: altid afspilningsknapper, og markering af videoer, der kan hentes
+ * offline (kun filer fra sitet selv). Bruges kun, mens appens indhold bygges.
  *
  * @param string $html  Blokkens HTML.
  * @param array  $block Blokken.
  * @return string
  */
-function ibos_guides_mark_offline_video( $html, $block ) {
-	if ( 'core/video' !== $block['blockName'] || '' === $html || ! ibos_guides_video_offline_allowed( $block ) ) {
+function ibos_guides_prepare_video( $html, $block ) {
+	if ( 'core/video' !== $block['blockName'] || '' === $html ) {
 		return $html;
 	}
 	$p = new WP_HTML_Tag_Processor( $html );
-	if ( $p->next_tag( 'figure' ) ) {
-		$p->set_attribute( 'data-offline', '1' );
-		return $p->get_updated_html();
+	if ( ! $p->next_tag( 'figure' ) ) {
+		return $html;
 	}
-	return $html;
+	$p->set_bookmark( 'figure' );
+	$local = false;
+	if ( $p->next_tag( 'video' ) ) {
+		// Uden knapper kan borgeren hverken starte eller stoppe videoen.
+		$p->set_attribute( 'controls', true );
+		$local = '' !== ibos_guides_local_url( $p->get_attribute( 'src' ) );
+	}
+	if ( $local && ibos_guides_video_offline_allowed( $block ) ) {
+		$p->seek( 'figure' );
+		$p->set_attribute( 'data-offline', '1' );
+	}
+	return $p->get_updated_html();
+}
+
+/**
+ * Videoer i en sides færdige HTML.
+ *
+ * @param string $html Renderet indhold.
+ * @return array{offline: array[], online: bool} offline: array( 'u', 's', 'x' => string[] ).
+ */
+function ibos_guides_html_videos( $html ) {
+	$out = array(
+		'offline' => array(),
+		'online'  => false,
+	);
+	if ( false === stripos( $html, '<video' ) ) {
+		return $out;
+	}
+	$p       = new WP_HTML_Tag_Processor( $html );
+	$current = null; // Den video, et <track> hører til.
+	while ( $p->next_tag() ) {
+		$tag = $p->get_tag();
+		if ( 'FIGURE' === $tag && ! $p->is_tag_closer() ) {
+			$current = null;
+			$offline = '1' === $p->get_attribute( 'data-offline' );
+			if ( $p->next_tag( 'video' ) ) {
+				$src = ibos_guides_local_url( $p->get_attribute( 'src' ) );
+				if ( ! $offline || '' === $src ) {
+					$out['online'] = true;
+					continue;
+				}
+				$id     = attachment_url_to_postid( $src );
+				$file   = $id ? get_attached_file( $id ) : '';
+				$extras = array();
+				$poster = ibos_guides_local_url( $p->get_attribute( 'poster' ) );
+				if ( '' !== $poster ) {
+					$extras[] = $poster;
+				}
+				$out['offline'][ $src ] = array(
+					'u' => $src,
+					's' => ( $file && is_readable( $file ) ) ? (int) filesize( $file ) : 0,
+					'x' => $extras,
+				);
+				$current = $src;
+			}
+		} elseif ( 'TRACK' === $tag && $current ) {
+			$t = ibos_guides_local_url( $p->get_attribute( 'src' ) );
+			if ( '' !== $t ) {
+				$out['offline'][ $current ]['x'][] = $t;
+			}
+		} elseif ( 'VIDEO' === $tag && ! $p->is_tag_closer() ) {
+			// En video uden for en videoblok (fx i et HTML-felt) kræver internet.
+			$out['online'] = true;
+		}
+	}
+	return $out;
 }
 
 /**
@@ -377,6 +414,9 @@ function ibos_guides_mark_offline_video( $html, $block ) {
  * @return string
  */
 function ibos_guides_mb( $bytes ) {
+	if ( $bytes <= 0 ) {
+		return '?';
+	}
 	$mb = $bytes / 1048576;
 	return number_format_i18n( $mb < 10 ? max( 0.1, round( $mb, 1 ) ) : round( $mb ), $mb < 10 ? 1 : 0 );
 }

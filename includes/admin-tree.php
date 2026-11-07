@@ -55,15 +55,19 @@ function ibos_guides_children_admin( $parent_id ) {
 /**
  * Hele træet hentet med én forespørgsel: sider pr. id og sorterede børn pr. forælder.
  *
+ * @param bool $light Uden metadata (kun til rækkefølgen).
  * @return array{posts: array<int, WP_Post>, kids: array<int, int[]>}
  */
-function ibos_guides_tree_index() {
+function ibos_guides_tree_index( $light = false ) {
 	$all   = get_posts(
 		array(
-			'post_type'      => IBOS_GUIDES_CPT,
-			'post_status'    => array( 'publish', 'draft', 'pending', 'private', 'future' ),
-			'posts_per_page' => -1,
-			'orderby'        => array( 'menu_order' => 'ASC', 'title' => 'ASC' ),
+			'post_type'              => IBOS_GUIDES_CPT,
+			'post_status'            => array( 'publish', 'draft', 'pending', 'private', 'future' ),
+			'posts_per_page'         => -1,
+			'orderby'                => array( 'menu_order' => 'ASC', 'title' => 'ASC' ),
+			// Til Forrige/Næste i editoren behøves hverken metadata eller kategorier.
+			'update_post_meta_cache' => ! $light,
+			'update_post_term_cache' => false,
 		)
 	);
 	$posts = array();
@@ -151,20 +155,68 @@ function ibos_guides_place_problem( $item, $parent ) {
 
 /**
  * Sæt rækkefølgen af en forælders børn (10, 20, 30 …). Sider i listen, der ligger et andet
- * sted, flyttes hertil. Kun ændrede sider gemmes.
+ * sted, flyttes hertil.
+ *
+ * Kun placeringen (forælder, rækkefølge og evt. adressen) skrives – siderne gemmes ikke igen.
+ * Ellers ville WordPress' indholdsfilter køre som den aktuelle bruger og kunne fjerne fx
+ * indlejret HTML fra sider, brugeren aldrig har åbnet, og hver side ville udløse alt arbejdet
+ * ved en almindelig gem.
  *
  * @param int   $parent_id Forælder.
  * @param int[] $ids       Børn i den ønskede rækkefølge.
  */
 function ibos_guides_set_order( $parent_id, $ids ) {
-	$GLOBALS['ibos_guides_placing'] = true; // Rækkefølgen sættes her; ikke "læg sidst".
+	global $wpdb;
+	$roots = array();
+	$root  = ibos_guides_root( $parent_id );
+	if ( $root ) {
+		$roots[ $root->ID ] = true;
+	}
 	foreach ( array_values( $ids ) as $n => $id ) {
 		$p = get_post( $id );
-		if ( $p && ( (int) $p->post_parent !== (int) $parent_id || (int) $p->menu_order !== ( $n + 1 ) * 10 ) ) {
-			wp_update_post( array( 'ID' => $p->ID, 'post_parent' => (int) $parent_id, 'menu_order' => ( $n + 1 ) * 10 ) );
+		if ( ! $p ) {
+			continue;
+		}
+		$data = array();
+		if ( (int) $p->menu_order !== ( $n + 1 ) * 10 ) {
+			$data['menu_order'] = ( $n + 1 ) * 10;
+		}
+		if ( (int) $p->post_parent !== (int) $parent_id ) {
+			$old = ibos_guides_root( $p );
+			if ( $old ) {
+				$roots[ $old->ID ] = true;
+			}
+			$data['post_parent'] = (int) $parent_id;
+			// Adressen skal være unik blandt de nye søskende (ellers kan siden ikke findes).
+			if ( '' !== $p->post_name ) {
+				$data['post_name'] = wp_unique_post_slug( $p->post_name, $p->ID, $p->post_status, $p->post_type, (int) $parent_id );
+			}
+		}
+		if ( $data ) {
+			$wpdb->update( $wpdb->posts, $data, array( 'ID' => $p->ID ) ); // phpcs:ignore WordPress.DB.DirectDatabaseQuery
+			clean_post_cache( $p->ID );
 		}
 	}
-	$GLOBALS['ibos_guides_placing'] = false;
+	// Én ny version pr. berørt guide (også den, en side er flyttet fra).
+	foreach ( array_keys( $roots ) as $rid ) {
+		ibos_guides_bump( $rid );
+	}
+}
+
+/**
+ * Kan borgerne se siden i appen? (Udgivet, uden adgangskode, og alle niveauer over den udgivet.)
+ *
+ * @param WP_Post $post Side.
+ * @return bool
+ */
+function ibos_guides_in_app( $post ) {
+	foreach ( array_merge( array( $post->ID ), get_post_ancestors( $post ) ) as $id ) {
+		$p = get_post( $id );
+		if ( ! $p || 'publish' !== $p->post_status || '' !== (string) $p->post_password ) {
+			return false;
+		}
+	}
+	return true;
 }
 
 /**
@@ -290,6 +342,8 @@ function ibos_guides_copy() {
 				'post_excerpt' => $src->post_excerpt,
 				'post_parent'  => (int) $src->post_parent,
 				'menu_order'   => (int) $src->menu_order,
+				// En beskyttet side må ikke blive ubeskyttet, bare fordi den kopieres.
+				'post_password' => $src->post_password,
 			)
 		),
 		true
@@ -297,7 +351,7 @@ function ibos_guides_copy() {
 	if ( is_wp_error( $new ) ) {
 		wp_die( esc_html( $new->get_error_message() ) );
 	}
-	foreach ( array( '_ibg_hidden', '_ibg_child_menu' ) as $key ) {
+	foreach ( array( '_ibg_hidden', '_ibg_child_menu', '_ibg_menu_title' ) as $key ) {
 		$v = get_post_meta( $id, $key, true );
 		if ( '' !== $v ) {
 			update_post_meta( $new, $key, $v );
@@ -359,6 +413,12 @@ function ibos_guides_tree_assets( $hook ) {
 			'saving'  => __( 'Gemmer …', 'ibos-guides' ),
 			'error'   => __( 'Ændringen kunne ikke gemmes. Siden genindlæses.', 'ibos-guides' ),
 			'confirm' => __( 'Læg "%s" i papirkurven? Eventuelle undersider følger med. Du kan fortryde bagefter.', 'ibos-guides' ),
+			'saved'   => __( 'Gemt', 'ibos-guides' ),
+			'done'    => array(
+				'moved'    => __( 'Flyttet', 'ibos-guides' ),
+				'copied'   => __( 'Kopi oprettet', 'ibos-guides' ),
+				'restored' => __( 'Gendannet', 'ibos-guides' ),
+			),
 		)
 	);
 }
@@ -371,6 +431,10 @@ function ibos_guides_tree_page() {
 	// phpcs:disable WordPress.Security.NonceVerification.Recommended -- kun visning af besked.
 	$done = isset( $_GET['ibg_done'] ) ? sanitize_key( wp_unslash( $_GET['ibg_done'] ) ) : '';
 	$did  = isset( $_GET['ibg_id'] ) ? absint( $_GET['ibg_id'] ) : 0;
+	// Kun guide-sider, brugeren må se (titlen vises i beskeden).
+	if ( $did && ( IBOS_GUIDES_CPT !== get_post_type( $did ) || ! current_user_can( 'read_post', $did ) ) ) {
+		$did = 0;
+	}
 	// phpcs:enable
 	$msgs = array(
 		/* translators: %s: titel */
@@ -390,9 +454,15 @@ function ibos_guides_tree_page() {
 			<a class="page-title-action" href="<?php echo esc_url( admin_url( 'admin.php?page=ibos-guides-import' ) ); ?>"><?php esc_html_e( 'Importér guide', 'ibos-guides' ); ?></a>
 		<?php endif; ?>
 		<hr class="wp-header-end">
-		<?php if ( $did && isset( $msgs[ $done ] ) && get_post( $did ) ) : ?>
-			<div class="notice notice-success is-dismissible"><p>
-				<?php echo esc_html( sprintf( $msgs[ $done ], get_the_title( $did ) ) ); ?>
+		<?php
+		$note = '';
+		if ( $did && 'moved' === $done && 'publish' === get_post_status( $did ) && ! ibos_guides_in_app( get_post( $did ) ) ) {
+			$note = __( 'Bemærk: Siden vises ikke i appen, fordi kapitlet (eller et niveau over det) ikke er udgivet.', 'ibos-guides' );
+		}
+		?>
+		<?php if ( $did && isset( $msgs[ $done ] ) ) : ?>
+			<div class="notice notice-<?php echo $note ? 'warning' : 'success'; ?> is-dismissible"><p>
+				<?php echo esc_html( sprintf( $msgs[ $done ], get_the_title( $did ) ) . ( $note ? ' ' . $note : '' ) ); ?>
 				<?php if ( 'trashed' === $done && current_user_can( 'delete_post', $did ) ) : ?>
 					<form method="post" action="<?php echo esc_url( admin_url( 'admin-post.php' ) ); ?>" style="display:inline">
 						<input type="hidden" name="action" value="ibos_guides_untrash">
@@ -409,11 +479,12 @@ function ibos_guides_tree_page() {
 			<p><?php esc_html_e( 'Her ser du hver guide som en indholdsfortegnelse – i samme rækkefølge som i appen. En guide består af kapitler, og hvert kapitel har sine sider.', 'ibos-guides' ); ?></p>
 			<ul>
 				<li><?php esc_html_e( 'Flyt: træk i håndtaget ⠿ – også over i et andet kapitel. Eller brug knapperne ↑ og ↓ eller "Flyt til" under "Mere".', 'ibos-guides' ); ?></li>
-				<li><?php esc_html_e( 'Ny side: brug "+ Ny side i kapitlet". Siden lægges sidst i kapitlet.', 'ibos-guides' ); ?></li>
+				<li><?php esc_html_e( 'Ny side: brug "+ Ny side i kapitlet". Siden lægges sidst i kapitlet. Under "Mere" kan du også kopiere en side eller lægge den i papirkurven.', 'ibos-guides' ); ?></li>
+				<li><?php esc_html_e( 'Røde mærker viser, hvad der mangler – fx "2 ting at rette" (alt-tekst, undertekster, eksempeltekst) eller "Ikke i appen", når et kapitel stadig er en kladde.', 'ibos-guides' ); ?></li>
 				<li><?php esc_html_e( 'Ændringer gemmes med det samme, og appen får en ny version.', 'ibos-guides' ); ?></li>
 			</ul>
 		</div>
-		<p id="ibg-tree-status" class="ibg-tree-status" role="status" aria-live="polite"<?php echo ( $did && isset( $msgs[ $done ] ) && get_post( $did ) ) ? ' data-announce="' . esc_attr( sprintf( $msgs[ $done ], get_the_title( $did ) ) ) . '" data-focus="' . esc_attr( $done . ':' . $did ) . '"' : ''; ?>></p>
+		<p id="ibg-tree-status" class="ibg-tree-status screen-reader-text" role="status" aria-live="polite"<?php echo ( $did && isset( $msgs[ $done ] ) ) ? ' data-announce="' . esc_attr( sprintf( $msgs[ $done ], get_the_title( $did ) ) . ( $note ? ' ' . $note : '' ) ) . '" data-focus="' . esc_attr( $done . ':' . $did ) . '"' : ''; ?>></p>
 		<?php if ( empty( $index['kids'][0] ) ) : ?>
 			<p><?php esc_html_e( 'Der er ingen guides endnu. Opret en ny guide, eller importér O&M-teknik eller Ledsageteknik.', 'ibos-guides' ); ?></p>
 		<?php endif; ?>
@@ -443,11 +514,11 @@ function ibos_guides_tree_page() {
 		.ibg-badge { display:inline-block; font-size:11px; padding:1px 6px; border-radius:3px; background:#f0f0f1; color:#1d2327; margin-left:.35rem; }
 		.ibg-row .button { min-height:32px; }
 		.ibg-list > li:first-child > .ibg-row .ibg-up, .ibg-list > li:last-child > .ibg-row .ibg-down { visibility:hidden; }
-		.ibg-more[open] { flex-basis:100%; order:10; }
-		.ibg-more summary { cursor:pointer; list-style:none; }
-		.ibg-more summary::-webkit-details-marker { display:none; }
-		.ibg-more[open] summary { margin-bottom:.5rem; }
-		.ibg-more-panel { display:flex; flex-wrap:wrap; align-items:center; gap:.75rem 1.5rem; background:#f6f7f7; border:1px solid #dcdcde; border-radius:4px; padding:.6rem .75rem; }
+
+.ibg-more-panel { display:flex; flex-wrap:wrap; align-items:center; gap:.75rem 1.5rem; background:#f6f7f7; border:1px solid #dcdcde; border-radius:4px; padding:.6rem .75rem; margin:.25rem 0 .5rem; }
+		.ibg-more-panel[hidden] { display:none; }
+		.ibg-addr { margin-left:.5rem; font-weight:400; font-family:monospace; color:#50575e; }
+		.ibg-chip { margin-left:.5rem; font-weight:600; color:#00701a; }
 		.ibg-more-panel label { margin-right:.35rem; }
 		.ibg-more-panel select { max-width:20rem; }
 		.ibg-more-panel .ibg-danger { color:#b32d2e; border-color:#b32d2e; }
@@ -472,6 +543,7 @@ function ibos_guides_tree_page() {
  * @param array   $index Fra ibos_guides_tree_index().
  */
 function ibos_guides_tree_item( $p, $depth, $gid, $index ) {
+	static $targets_by_depth = array();
 	if ( $depth > 20 ) {
 		return;
 	}
@@ -487,6 +559,17 @@ function ibos_guides_tree_item( $p, $depth, $gid, $index ) {
 	);
 	$add    = array( __( 'Nyt kapitel', 'ibos-guides' ), __( 'Ny side i kapitlet', 'ibos-guides' ), __( 'Ny underside', 'ibos-guides' ) );
 	$post_a = admin_url( 'admin-post.php' );
+	$in_app = 'publish' === $p->post_status && ibos_guides_in_app( $p ) && ( $depth > 0 || ibos_guides_is_guide( $p ) );
+	$warn   = count( ibos_guides_check( $p ) );
+	// Mulige nye forældre ("Flyt til"): beregnes én gang pr. niveau.
+	if ( $depth > 0 && ! isset( $targets_by_depth[ $depth ] ) ) {
+		$targets_by_depth[ $depth ] = array();
+		foreach ( $index['depth'] as $cid => $cd ) {
+			if ( $cd === $depth - 1 ) {
+				$targets_by_depth[ $depth ][ $index['root'][ $cid ] ][] = $index['posts'][ $cid ];
+			}
+		}
+	}
 	?>
 	<li id="ibg-item-<?php echo (int) $p->ID; ?>" data-id="<?php echo (int) $p->ID; ?>">
 		<div class="ibg-row">
@@ -494,15 +577,17 @@ function ibos_guides_tree_item( $p, $depth, $gid, $index ) {
 				<span class="ibg-handle ibg-handle-d<?php echo (int) $depth; ?>" title="<?php esc_attr_e( 'Træk for at flytte', 'ibos-guides' ); ?>" aria-hidden="true">⠿</span>
 			<?php endif; ?>
 			<span class="ibg-title">
-				<a href="<?php echo esc_url( get_edit_post_link( $p->ID ) ); ?>"><?php echo esc_html( $title ); ?></a><span class="ibg-kind">(<?php echo esc_html( $kinds[ min( $depth, 3 ) ] ); ?>)</span>
+				<?php echo esc_html( $title ); ?><span class="ibg-kind">(<?php echo esc_html( $kinds[ min( $depth, 3 ) ] ); ?>)</span>
 				<?php if ( isset( $status[ $p->post_status ] ) ) : ?><span class="ibg-badge"><?php echo esc_html( $status[ $p->post_status ] ); ?></span><?php endif; ?>
 				<?php if ( '' !== (string) $p->post_password ) : ?><span class="ibg-badge"><?php esc_html_e( 'Adgangskode', 'ibos-guides' ); ?></span><?php endif; ?>
 				<?php if ( get_post_meta( $p->ID, '_ibg_hidden', true ) ) : ?><span class="ibg-badge"><?php esc_html_e( 'Skjult i menu', 'ibos-guides' ); ?></span><?php endif; ?>
-				<?php if ( ibos_guides_has_sample( $p->post_content ) ) : ?><span class="ibg-badge ibg-badge-warn"><?php esc_html_e( 'Eksempeltekst mangler at blive skrevet om', 'ibos-guides' ); ?></span><?php endif; ?>
+				<?php if ( 'publish' === $p->post_status && ! $in_app ) : ?><span class="ibg-badge ibg-badge-warn"><?php echo esc_html( 0 === $depth ? __( 'Ikke en app endnu', 'ibos-guides' ) : __( 'Ikke i appen – et niveau over er ikke udgivet', 'ibos-guides' ) ); ?></span><?php endif; ?>
+				<?php if ( $warn ) : ?><a class="ibg-badge ibg-badge-warn" href="<?php echo esc_url( get_edit_post_link( $p->ID ) ); ?>"><?php echo esc_html( sprintf( /* translators: %d: antal */ _n( '%d ting at rette', '%d ting at rette', $warn, 'ibos-guides' ), $warn ) ); ?><span class="screen-reader-text"> <?php echo esc_html( sprintf( /* translators: %s: titel */ __( 'på "%s"', 'ibos-guides' ), $title ) ); ?></span></a><?php endif; ?>
+				<?php if ( 0 === $depth && $in_app ) : ?><span class="ibg-addr"><?php echo esc_html( wp_parse_url( ibos_guides_base_url( $p ), PHP_URL_PATH ) ); ?></span><?php endif; ?>
 			</span>
-			<a class="button button-small" href="<?php echo esc_url( get_edit_post_link( $p->ID ) ); ?>" aria-label="<?php echo esc_attr( sprintf( /* translators: %s: titel */ __( 'Redigér "%s"', 'ibos-guides' ), $title ) ); ?>"><?php esc_html_e( 'Redigér', 'ibos-guides' ); ?></a>
-			<?php if ( 'publish' === $p->post_status ) : ?>
-				<a class="button button-small" href="<?php echo esc_url( get_permalink( $p ) ); ?>" aria-label="<?php echo esc_attr( sprintf( /* translators: %s: titel */ __( 'Vis "%s" i appen', 'ibos-guides' ), $title ) ); ?>"><?php esc_html_e( 'Vis', 'ibos-guides' ); ?></a>
+			<a class="button button-small ibg-edit" href="<?php echo esc_url( get_edit_post_link( $p->ID ) ); ?>" aria-label="<?php echo esc_attr( sprintf( /* translators: %s: titel */ __( 'Rediger "%s"', 'ibos-guides' ), $title ) ); ?>"><?php esc_html_e( 'Rediger', 'ibos-guides' ); ?></a>
+			<?php if ( $in_app ) : ?>
+				<a class="button button-small" href="<?php echo esc_url( 0 === $depth ? ibos_guides_base_url( $p ) : get_permalink( $p ) ); ?>" aria-label="<?php echo esc_attr( 0 === $depth ? sprintf( /* translators: %s: titel */ __( 'Åbn appen "%s"', 'ibos-guides' ), $title ) : sprintf( /* translators: %s: titel */ __( 'Vis "%s" i appen', 'ibos-guides' ), $title ) ); ?>"><?php echo esc_html( 0 === $depth ? __( 'Åbn appen', 'ibos-guides' ) : __( 'Vis', 'ibos-guides' ) ); ?></a>
 			<?php endif; ?>
 			<?php if ( $depth > 0 ) : ?>
 				<?php foreach ( array( 'up' => __( 'Flyt op', 'ibos-guides' ), 'down' => __( 'Flyt ned', 'ibos-guides' ) ) as $dir => $label ) : ?>
@@ -514,53 +599,55 @@ function ibos_guides_tree_item( $p, $depth, $gid, $index ) {
 						<button type="submit" class="button button-small" aria-label="<?php echo esc_attr( $label . ': ' . $title ); ?>" title="<?php echo esc_attr( $label ); ?>"><?php echo 'up' === $dir ? '↑' : '↓'; ?></button>
 					</form>
 				<?php endforeach; ?>
-				<details class="ibg-more">
-					<summary class="button button-small"><?php esc_html_e( 'Mere', 'ibos-guides' ); ?><span class="screen-reader-text"> <?php echo esc_html( sprintf( /* translators: %s: titel */ __( 'for "%s"', 'ibos-guides' ), $title ) ); ?></span></summary>
-					<div class="ibg-more-panel">
-						<?php
-						$targets = array();
-						foreach ( $index['depth'] as $cid => $cd ) {
-							if ( $cid !== (int) $p->post_parent && $cd === $depth - 1 ) {
-								$targets[ $index['root'][ $cid ] ][] = $index['posts'][ $cid ];
-							}
-						}
-						?>
-						<?php if ( $targets ) : ?>
-							<form method="post" action="<?php echo esc_url( $post_a ); ?>">
-								<input type="hidden" name="action" value="ibos_guides_reparent">
-								<input type="hidden" name="id" value="<?php echo (int) $p->ID; ?>">
-								<input type="hidden" name="_wpnonce" value="<?php echo esc_attr( wp_create_nonce( 'ibos_guides_reparent_' . $p->ID ) ); ?>">
-								<label for="ibg-to-<?php echo (int) $p->ID; ?>"><?php echo esc_html( 1 === $depth ? __( 'Flyt kapitlet til guiden', 'ibos-guides' ) : __( 'Flyt til kapitlet', 'ibos-guides' ) ); ?></label>
-								<select id="ibg-to-<?php echo (int) $p->ID; ?>" name="parent">
-									<?php foreach ( $targets as $rid => $cands ) : ?>
-										<?php if ( $depth > 1 ) : ?><optgroup label="<?php echo esc_attr( get_the_title( $rid ) ); ?>"><?php endif; ?>
-										<?php foreach ( $cands as $cand ) : ?>
-											<option value="<?php echo (int) $cand->ID; ?>"><?php echo esc_html( get_the_title( $cand ) ); ?></option>
-										<?php endforeach; ?>
-										<?php if ( $depth > 1 ) : ?></optgroup><?php endif; ?>
-									<?php endforeach; ?>
-								</select>
-								<button type="submit" class="button button-small"><?php esc_html_e( 'Flyt', 'ibos-guides' ); ?></button>
-							</form>
-						<?php endif; ?>
-						<form method="post" action="<?php echo esc_url( $post_a ); ?>">
-							<input type="hidden" name="action" value="ibos_guides_copy">
-							<input type="hidden" name="id" value="<?php echo (int) $p->ID; ?>">
-							<input type="hidden" name="_wpnonce" value="<?php echo esc_attr( wp_create_nonce( 'ibos_guides_copy_' . $p->ID ) ); ?>">
-							<button type="submit" class="button button-small"><?php echo esc_html( $kids ? __( 'Kopiér (uden undersider)', 'ibos-guides' ) : __( 'Kopiér', 'ibos-guides' ) ); ?></button>
-						</form>
-						<?php if ( current_user_can( 'delete_post', $p->ID ) ) : ?>
-							<form method="post" action="<?php echo esc_url( $post_a ); ?>" class="ibg-trash" data-title="<?php echo esc_attr( $title ); ?>">
-								<input type="hidden" name="action" value="ibos_guides_trash">
-								<input type="hidden" name="id" value="<?php echo (int) $p->ID; ?>">
-								<input type="hidden" name="_wpnonce" value="<?php echo esc_attr( wp_create_nonce( 'ibos_guides_trash_' . $p->ID ) ); ?>">
-								<button type="submit" class="button button-small ibg-danger"><?php echo esc_html( $kids ? __( 'Læg i papirkurven (med undersider)', 'ibos-guides' ) : __( 'Læg i papirkurven', 'ibos-guides' ) ); ?></button>
-							</form>
-						<?php endif; ?>
-					</div>
-				</details>
+				<button type="button" class="button button-small ibg-more-toggle" aria-expanded="false" aria-controls="ibg-more-<?php echo (int) $p->ID; ?>"><?php esc_html_e( 'Mere', 'ibos-guides' ); ?><span class="screen-reader-text"> <?php echo esc_html( sprintf( /* translators: %s: titel */ __( 'for "%s"', 'ibos-guides' ), $title ) ); ?></span></button>
 			<?php endif; ?>
 		</div>
+		<?php if ( $depth > 0 ) : ?>
+			<?php
+			$targets = array();
+			foreach ( $targets_by_depth[ $depth ] as $rid => $cands ) {
+				foreach ( $cands as $cand ) {
+					if ( (int) $cand->ID !== (int) $p->post_parent ) {
+						$targets[ $rid ][] = $cand;
+					}
+				}
+			}
+			?>
+			<div class="ibg-more-panel" id="ibg-more-<?php echo (int) $p->ID; ?>" hidden>
+				<?php if ( $targets ) : ?>
+					<form method="post" action="<?php echo esc_url( $post_a ); ?>">
+						<input type="hidden" name="action" value="ibos_guides_reparent">
+						<input type="hidden" name="id" value="<?php echo (int) $p->ID; ?>">
+						<input type="hidden" name="_wpnonce" value="<?php echo esc_attr( wp_create_nonce( 'ibos_guides_reparent_' . $p->ID ) ); ?>">
+						<label for="ibg-to-<?php echo (int) $p->ID; ?>"><?php echo esc_html( 1 === $depth ? __( 'Flyt kapitlet til guiden', 'ibos-guides' ) : __( 'Flyt til kapitlet', 'ibos-guides' ) ); ?></label>
+						<select id="ibg-to-<?php echo (int) $p->ID; ?>" name="parent">
+							<?php foreach ( $targets as $rid => $cands ) : ?>
+								<?php if ( $depth > 1 ) : ?><optgroup label="<?php echo esc_attr( get_the_title( $rid ) ); ?>"><?php endif; ?>
+								<?php foreach ( $cands as $cand ) : ?>
+									<option value="<?php echo (int) $cand->ID; ?>"><?php echo esc_html( get_the_title( $cand ) . ( 'publish' !== $cand->post_status ? ' (' . __( 'kladde', 'ibos-guides' ) . ')' : '' ) ); ?></option>
+								<?php endforeach; ?>
+								<?php if ( $depth > 1 ) : ?></optgroup><?php endif; ?>
+							<?php endforeach; ?>
+						</select>
+						<button type="submit" class="button button-small"><?php esc_html_e( 'Flyt', 'ibos-guides' ); ?></button>
+					</form>
+				<?php endif; ?>
+				<form method="post" action="<?php echo esc_url( $post_a ); ?>">
+					<input type="hidden" name="action" value="ibos_guides_copy">
+					<input type="hidden" name="id" value="<?php echo (int) $p->ID; ?>">
+					<input type="hidden" name="_wpnonce" value="<?php echo esc_attr( wp_create_nonce( 'ibos_guides_copy_' . $p->ID ) ); ?>">
+					<button type="submit" class="button button-small"><?php echo esc_html( $kids ? __( 'Kopiér (uden undersider)', 'ibos-guides' ) : __( 'Kopiér', 'ibos-guides' ) ); ?></button>
+				</form>
+				<?php if ( current_user_can( 'delete_post', $p->ID ) ) : ?>
+					<form method="post" action="<?php echo esc_url( $post_a ); ?>" class="ibg-trash" data-title="<?php echo esc_attr( $title ); ?>">
+						<input type="hidden" name="action" value="ibos_guides_trash">
+						<input type="hidden" name="id" value="<?php echo (int) $p->ID; ?>">
+						<input type="hidden" name="_wpnonce" value="<?php echo esc_attr( wp_create_nonce( 'ibos_guides_trash_' . $p->ID ) ); ?>">
+						<button type="submit" class="button button-small ibg-danger"><?php echo esc_html( $kids ? __( 'Læg i papirkurven (med undersider)', 'ibos-guides' ) : __( 'Læg i papirkurven', 'ibos-guides' ) ); ?></button>
+					</form>
+				<?php endif; ?>
+			</div>
+		<?php endif; ?>
 		<?php if ( $kids || $depth < 2 ) : ?>
 			<ul class="ibg-list" data-parent="<?php echo (int) $p->ID; ?>" data-depth="<?php echo (int) $depth + 1; ?>" data-guide="<?php echo (int) $gid; ?>"><?php
 			foreach ( $kids as $k ) {
@@ -569,8 +656,8 @@ function ibos_guides_tree_item( $p, $depth, $gid, $index ) {
 			?></ul>
 		<?php endif; ?>
 		<?php if ( $depth < 2 || $kids ) : ?>
-			<div class="ibg-add" style="margin-left:<?php echo $depth < 2 || $kids ? '1.75rem' : '0'; ?>">
-				<a class="button" href="<?php echo esc_url( admin_url( 'post-new.php?post_type=' . IBOS_GUIDES_CPT . '&ibg_parent=' . (int) $p->ID ) ); ?>">+ <?php echo esc_html( $add[ min( $depth, 2 ) ] ); ?><span class="screen-reader-text"> <?php echo esc_html( sprintf( /* translators: %s: titel */ __( 'i "%s"', 'ibos-guides' ), $title ) ); ?></span></a>
+			<div class="ibg-add" style="margin-left:1.75rem">
+				<a class="button" href="<?php echo esc_url( admin_url( 'post-new.php?post_type=' . IBOS_GUIDES_CPT . '&ibg_parent=' . (int) $p->ID ) ); ?>">+ <?php echo esc_html( $add[ min( $depth, 2 ) ] ); ?><span class="screen-reader-text"> <?php echo esc_html( sprintf( /* translators: %s: titel */ __( '"%s"', 'ibos-guides' ), $title ) ); ?></span></a>
 			</div>
 		<?php endif; ?>
 	</li>
@@ -601,56 +688,66 @@ function ibos_guides_new_with_parent( $data, $postarr ) {
  * ------------------------------------------------------------------------- */
 
 function ibos_guides_box_place( $post ) {
-	$kind  = ibos_guides_kind( $post );
+	$depth = 'auto-draft' === $post->post_status && ! $post->post_parent ? 0 : ibos_guides_depth( $post );
 	$trail = array();
 	foreach ( array_reverse( get_post_ancestors( $post ) ) as $a ) {
 		$trail[] = get_the_title( $a );
 	}
 	$trail[] = '' !== $post->post_title ? $post->post_title : __( '(denne side)', 'ibos-guides' );
-	$texts   = array(
-		'guide'   => __( 'Dette er en guide – siden er appens forside. Kapitlerne lægges under den.', 'ibos-guides' ),
-		'chapter' => __( 'Dette er et kapitel. Det vises som et punkt i appens menu, og dets sider vises under det. Teksten i editoren er valgfri – skriv en kort indledning, eller lad den være tom.', 'ibos-guides' ),
-		'page'    => __( 'Dette er en side i et kapitel.', 'ibos-guides' ),
-	);
+	if ( 0 === $depth ) {
+		$text = ibos_guides_is_guide( $post ) || 'auto-draft' === $post->post_status || metadata_exists( 'post', $post->ID, '_ibg_color' )
+			? __( 'Dette er en guide – siden er appens forside. Kapitlerne lægges under den.', 'ibos-guides' )
+			: __( 'Siden ligger øverst, men er ikke en app. Sæt flueben ved "Dette er en guide" i App-indstillinger, eller vælg en "Overordnet" side.', 'ibos-guides' );
+	} elseif ( 1 === $depth ) {
+		$text = __( 'Dette er et kapitel. Det vises som et punkt i appens menu, og dets sider vises under det. Teksten i editoren er valgfri – skriv en kort indledning, eller lad den være tom.', 'ibos-guides' );
+	} elseif ( 2 === $depth ) {
+		$text = __( 'Dette er en side i et kapitel.', 'ibos-guides' );
+	} else {
+		$text = __( 'Dette er en underside til en side.', 'ibos-guides' );
+	}
 	$prev = 0;
 	$next = 0;
 	$root = ibos_guides_root( $post );
 	if ( $root && 'auto-draft' !== $post->post_status ) {
-		$order = ibos_guides_reading_order( $root->ID, ibos_guides_tree_index() );
+		$order = ibos_guides_reading_order( $root->ID, ibos_guides_tree_index( true ) );
 		$i     = array_search( (int) $post->ID, $order, true );
 		if ( false !== $i ) {
 			$prev = $i > 0 ? $order[ $i - 1 ] : 0;
 			$next = isset( $order[ $i + 1 ] ) ? $order[ $i + 1 ] : 0;
 		}
 	}
-	// Ny side ved siden af denne (samme kapitel) – eller i kapitlet, hvis dette er et kapitel.
-	$new_parent = 'page' === $kind ? (int) $post->post_parent : (int) $post->ID;
+	// Ny side ved siden af denne (samme forælder) – eller under den, hvis den er guide/kapitel.
+	$new_parent = $depth >= 2 ? (int) $post->post_parent : (int) $post->ID;
 	$new_label  = array(
-		'guide'   => __( '+ Nyt kapitel i guiden', 'ibos-guides' ),
-		'chapter' => __( '+ Ny side i kapitlet', 'ibos-guides' ),
-		'page'    => __( '+ Ny side i samme kapitel', 'ibos-guides' ),
+		__( '+ Nyt kapitel i guiden', 'ibos-guides' ),
+		__( '+ Ny side i kapitlet', 'ibos-guides' ),
+		__( '+ Ny side i samme kapitel', 'ibos-guides' ),
+		__( '+ Ny underside ved siden af denne', 'ibos-guides' ),
 	);
 	?>
 	<p><a href="<?php echo esc_url( admin_url( 'admin.php?page=ibos-guides#ibg-item-' . (int) $post->ID ) ); ?>">← <?php esc_html_e( 'Tilbage til Oversigt', 'ibos-guides' ); ?></a></p>
 	<p><strong><?php echo esc_html( implode( ' › ', $trail ) ); ?></strong></p>
-	<p><?php echo esc_html( $texts[ $kind ] ); ?></p>
+	<p><?php echo esc_html( $text ); ?></p>
+	<?php if ( 'publish' === $post->post_status && $depth > 0 && ! ibos_guides_in_app( $post ) ) : ?>
+		<p class="notice notice-warning inline" style="padding:.5em"><?php esc_html_e( 'Siden vises ikke i appen, fordi et niveau over den ikke er udgivet.', 'ibos-guides' ); ?></p>
+	<?php endif; ?>
 	<?php if ( $prev || $next ) : ?>
-		<p style="display:flex;gap:.5rem;flex-wrap:wrap">
+		<p style="display:flex;flex-direction:column;gap:.4rem">
 			<?php if ( $prev ) : ?>
-				<a class="button" href="<?php echo esc_url( get_edit_post_link( $prev ) ); ?>" title="<?php echo esc_attr( get_the_title( $prev ) ); ?>">‹ <?php esc_html_e( 'Forrige', 'ibos-guides' ); ?><span class="screen-reader-text">: <?php echo esc_html( get_the_title( $prev ) ); ?></span></a>
+				<a class="button" style="white-space:normal;text-align:left;height:auto" href="<?php echo esc_url( get_edit_post_link( $prev ) ); ?>">‹ <?php esc_html_e( 'Forrige:', 'ibos-guides' ); ?> <?php echo esc_html( get_the_title( $prev ) ); ?></a>
 			<?php endif; ?>
 			<?php if ( $next ) : ?>
-				<a class="button" href="<?php echo esc_url( get_edit_post_link( $next ) ); ?>" title="<?php echo esc_attr( get_the_title( $next ) ); ?>"><?php esc_html_e( 'Næste', 'ibos-guides' ); ?><span class="screen-reader-text">: <?php echo esc_html( get_the_title( $next ) ); ?></span> ›</a>
+				<a class="button" style="white-space:normal;text-align:left;height:auto" href="<?php echo esc_url( get_edit_post_link( $next ) ); ?>"><?php esc_html_e( 'Næste:', 'ibos-guides' ); ?> <?php echo esc_html( get_the_title( $next ) ); ?> ›</a>
 			<?php endif; ?>
 		</p>
 		<p class="description"><?php esc_html_e( 'Husk at gemme, før du går videre.', 'ibos-guides' ); ?></p>
 	<?php endif; ?>
-	<?php if ( 'auto-draft' !== $post->post_status && ( $new_parent || 'guide' === $kind ) ) : ?>
-		<p><a class="button" href="<?php echo esc_url( admin_url( 'post-new.php?post_type=' . IBOS_GUIDES_CPT . '&ibg_parent=' . $new_parent ) ); ?>"><?php echo esc_html( $new_label[ $kind ] ); ?></a></p>
+	<?php if ( 'auto-draft' !== $post->post_status && ( $new_parent || 0 === $depth ) ) : ?>
+		<p><a class="button" href="<?php echo esc_url( admin_url( 'post-new.php?post_type=' . IBOS_GUIDES_CPT . '&ibg_parent=' . $new_parent ) ); ?>"><?php echo esc_html( $new_label[ min( $depth, 3 ) ] ); ?></a></p>
 	<?php endif; ?>
-	<?php if ( 'publish' === $post->post_status ) : ?>
-		<p><a href="<?php echo esc_url( get_permalink( $post ) ); ?>"><?php esc_html_e( 'Vis siden i appen', 'ibos-guides' ); ?></a></p>
+	<?php if ( 'publish' === $post->post_status && ibos_guides_in_app( $post ) && ( $depth > 0 || ibos_guides_is_guide( $post ) ) ) : ?>
+		<p><a href="<?php echo esc_url( 0 === $depth ? ibos_guides_base_url( $post ) : get_permalink( $post ) ); ?>"><?php echo esc_html( 0 === $depth ? __( 'Åbn appen', 'ibos-guides' ) : __( 'Vis siden i appen', 'ibos-guides' ) ); ?></a></p>
 	<?php endif; ?>
-	<p class="description"><?php esc_html_e( 'Flyt siden: klik på "Overordnet" øverst i panelet og vælg kapitlet (for en side) eller guiden (for et kapitel). Ingen overordnet = siden er en guide. Rækkefølgen ændrer du nemmest ved at trække siden i Guides → Oversigt.', 'ibos-guides' ); ?></p>
+	<p class="description"><?php esc_html_e( 'Flyt siden: klik på "Overordnet" øverst i panelet og vælg kapitlet (for en side) eller guiden (for et kapitel). Rækkefølgen ændrer du nemmest ved at trække siden i Guides → Oversigt.', 'ibos-guides' ); ?></p>
 	<?php
 }
