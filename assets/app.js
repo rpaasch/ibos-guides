@@ -246,6 +246,40 @@
     if (initial) { input.value = initial; run(false); }
   }
 
+  // Videoer gemmes ikke offline. Uden net (eller hvis videoen ikke kan hentes) vises en
+  // besked i stedet for en afspiller, der ikke gør noget.
+  function initVideos() {
+    var figs = Array.prototype.slice.call(document.querySelectorAll('figure.wp-block-video'));
+    if (!figs.length) return;
+    figs.forEach(function (fig) {
+      var note = document.createElement('p');
+      note.className = 'video-offline';
+      note.hidden = true;
+      note.textContent = 'Videoen kan kun ses med internet. Teksten på siden beskriver det vigtigste.';
+      fig.insertBefore(note, fig.firstChild);
+      var v = fig.querySelector('video');
+      // Også på wifi uden internet: kan videoen ikke hentes, vises beskeden.
+      if (v) v.addEventListener('error', function () { fig.dataset.failed = '1'; fig.classList.add('is-offline'); note.hidden = false; }, true);
+    });
+    function update() {
+      var off = !navigator.onLine;
+      figs.forEach(function (fig) {
+        if (!off && fig.dataset.failed) {
+          // Nettet er tilbage: prøv at hente videoen igen. Fejler den igen, vises beskeden igen.
+          delete fig.dataset.failed;
+          var v = fig.querySelector('video');
+          if (v) v.load();
+        }
+        fig.classList.toggle('is-offline', off);
+        fig.querySelector('.video-offline').hidden = !off;
+      });
+    }
+    window.addEventListener('online', update);
+    window.addEventListener('offline', update);
+    update();
+  }
+
   initInstallPage();
   initSearch();
+  initVideos();
 })();

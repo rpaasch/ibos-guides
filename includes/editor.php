@@ -225,14 +225,14 @@ function ibos_guides_allowed_blocks( $allowed, $context ) {
 	);
 }
 
-/* Overskrifter: kun H2–H4 i vælgeren (titlen er H1). */
+/* Overskrifter: kun H2–H4 i vælgeren (titlen er H1). Råd ved videoblokken om brug uden internet. */
 add_action( 'enqueue_block_editor_assets', 'ibos_guides_editor_assets' );
 function ibos_guides_editor_assets() {
 	$screen = function_exists( 'get_current_screen' ) ? get_current_screen() : null;
 	if ( ! $screen || IBOS_GUIDES_CPT !== $screen->post_type ) {
 		return;
 	}
-	wp_enqueue_script( 'ibos-guides-editor', plugins_url( 'assets/editor.js', IBOS_GUIDES_FILE ), array( 'wp-hooks' ), IBOS_GUIDES_VERSION, false );
+	wp_enqueue_script( 'ibos-guides-editor', plugins_url( 'assets/editor.js', IBOS_GUIDES_FILE ), array( 'wp-hooks', 'wp-compose', 'wp-element', 'wp-components', 'wp-block-editor' ), IBOS_GUIDES_VERSION, false );
 }
 
 /* ---------------------------------------------------------------------------
@@ -260,4 +260,21 @@ function ibos_guides_drop_empty_block( $html, $block ) {
 			return preg_match( '/<video\b[^>]*\bsrc\s*=\s*["\']?[^"\'\s>]/i', $html ) ? $html : '';
 	}
 	return $html;
+}
+
+/**
+ * Har guiden en video på en udgivet side? (Til teksten om brug uden internet.)
+ *
+ * @param WP_Post $guide Guiden.
+ * @return bool
+ */
+function ibos_guides_has_video( $guide ) {
+	$index = ibos_guides_tree_index();
+	foreach ( ibos_guides_reading_order( $guide->ID, $index ) as $id ) {
+		$p = $index['posts'][ $id ];
+		if ( 'publish' === $p->post_status && false !== strpos( $p->post_content, '<!-- wp:video' ) ) {
+			return true;
+		}
+	}
+	return false;
 }

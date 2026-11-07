@@ -81,6 +81,8 @@ a:hover { text-decoration-color: var(--hover-line); text-decoration-thickness: 5
 img, svg, picture, video { max-width: 100%; height: auto; }
 .wp-block-video video { display: block; width: 100%; border-radius: var(--radius); background: #000; }
 .wp-block-video figcaption { margin-top: .4em; }
+.video-offline { margin: 0; padding: .9em 1em; border: 2px solid currentColor; border-radius: var(--radius); font-weight: 600; }
+.wp-block-video.is-offline video { display: none; }
 picture, .image { display: block; }
 .image, figure { margin: 1.25rem 0; }
 figure img, .image img { display: block; border-radius: var(--radius); background: var(--surface); }

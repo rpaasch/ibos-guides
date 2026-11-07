@@ -476,7 +476,7 @@ function ibos_guides_check( $post ) {
 		$w[] = __( 'Der står stadig eksempeltekst fra et mønster – tekst i firkantede parenteser, der starter med ✎. Skriv den om, eller slet blokken.', 'ibos-guides' );
 	}
 	if ( $videos > $tracks ) {
-		$w[] = __( 'En video mangler undertekster. Vælg videoblokken → "Teksttråde" og upload en undertekstfil (.vtt) med typen "Undertekster" eller "Billedtekster". Beskriv også kort i teksten, hvad videoen viser.', 'ibos-guides' );
+		$w[] = __( 'En video mangler undertekster. Vælg videoblokken → "Tekstspor" og upload en undertekstfil (.vtt) med typen "Undertekster" eller "Billedtekster". Beskriv også kort i teksten, hvad videoen viser.', 'ibos-guides' );
 	}
 	if ( $empty_vid ) {
 		$w[] = __( 'Der er en tom videoblok. Vælg en video (Upload eller Mediebibliotek), eller slet blokken.', 'ibos-guides' );

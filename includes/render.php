@@ -282,7 +282,7 @@ function ibos_guides_render_special( $guide, $which ) {
 	} else {
 		$n    = esc_html( $name );
 		$body = '<h1>' . esc_html( $title ) . '</h1>
-<p>' . sprintf( /* translators: %s: appens navn */ esc_html__( 'Læg %s på hjemmeskærmen, så den åbner som en app. Når appen har været åbnet én gang med internet, virker alt indhold også uden net.', 'ibos-guides' ), $n ) . '</p>
+<p>' . sprintf( /* translators: %s: appens navn */ esc_html__( 'Læg %s på hjemmeskærmen, så den åbner som en app. Når appen har været åbnet én gang med internet, virker alt indhold også uden net.', 'ibos-guides' ), $n ) . ( ibos_guides_has_video( $guide ) ? ' ' . esc_html__( 'Undtagelsen er videoer: de kræver internet.', 'ibos-guides' ) : '' ) . '</p>
 <div class="install-box" id="install-box">
   <p id="install-status" role="status" aria-live="polite"></p>
   <button type="button" class="button" id="install-button" hidden>' . sprintf( /* translators: %s: appens navn */ esc_html__( 'Installér %s', 'ibos-guides' ), $n ) . '</button>
