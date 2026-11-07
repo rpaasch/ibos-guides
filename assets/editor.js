@@ -47,6 +47,7 @@
       var size = media && media.media_details && media.media_details.filesize;
       var sizeText = size ? ' (ca. ' + mb(size) + ' MB)' : '';
       var big = size && size > BIG;
+      var auto = !!props.attributes.autoplay;
       var notice = offline
         ? el(Notice, { status: big ? 'warning' : 'info', isDismissible: false, className: 'ibg-video-notice' },
             el('strong', null, 'Kan hentes til brug uden internet' + sizeText + '. '),
@@ -57,6 +58,9 @@
             'Skriv derfor det vigtigste som tekst eller punkter på siden, så den kan bruges uden video – og med skærmlæser.');
       return el(Fragment, null,
         notice,
+        auto ? el(Notice, { status: 'warning', isDismissible: false, className: 'ibg-video-notice' },
+          el('strong', null, 'Afspil automatisk er slået til. '),
+          'Slå det fra under Indstillinger – lyd og bevægelse, der starter af sig selv, er en tilgængelighedsfejl.') : null,
         el(BlockEdit, props),
         el(Inspector, null,
           el(PanelBody, { title: 'Video i appen', initialOpen: true },
@@ -72,6 +76,7 @@
             el('ul', { style: { listStyle: 'disc', paddingLeft: '1.2em', margin: 0 } },
               el('li', { style: { marginBottom: '.5em' } }, 'Tilføj undertekster: vælg "Tekstspor" i værktøjslinjen og upload en .vtt-fil.'),
               el('li', { style: { marginBottom: '.5em' } }, 'Brug mp4, og hold videoen kort – gerne under et par minutter.'),
+              el('li', { style: { marginBottom: '.5em' } }, 'Slå ikke "Afspil automatisk" til – lyd og bevægelse, der starter af sig selv, forstyrrer skærmlæsere.'),
               el('li', null, 'Skriv det vigtigste som tekst på siden, så den også giver mening uden video.')))));
     };
   }, 'withVideoHelp');

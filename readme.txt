@@ -67,7 +67,8 @@ Giv billedblokken CSS-klassen `dekorativ` (Avanceret → Ekstra CSS-klasse) og l
 * Mønstre under "IBOS Guide": side med trin og billede, billede/video med forklaring, mellemoverskrift med punkter, nummererede trin, godt at vide.
 * Video: videoblokken kan bruges. Borgeren kan hente videoerne til brug uden internet på "Installér appen" (med fremdrift, plads-tjek og "Fjern"); de afspilles og kan spoles offline (Range fra cachen), også i Safari. Redaktøren ser størrelsen og kan slå "Kan hentes til brug uden internet" fra pr. video. Ikke-hentede videoer viser en besked med link uden net.
 * Kun relevante blokke i editoren og overskrifter H2–H4. Tomme blokke vises ikke i appen.
-* Tilgængelighedstjek: video uden undertekster, tomme billed-/videoblokke og glemt eksempeltekst.
+* Tilgængelighedstjek: video uden undertekster, video der afspilles automatisk, tomme billed-/videoblokke og glemt eksempeltekst.
+* Tilgængelighed: fokus og besked bevares efter flyt/kopiér/papirkurv i Oversigten; fokus efter hentning af videoer; navngivet fremdriftslinje; reduceret bevægelse respekteres. Testet med axe (WCAG 2.2 AA): ingen fejl.
 
 = 1.1.2 =
 * Zip-filen har versionsnummer i navnet, fx ibos-guides-1.1.2.zip.

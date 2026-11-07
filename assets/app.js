@@ -407,6 +407,8 @@
         get.disabled = false;
         remove.disabled = false;
         bar.hidden = true;
+        // Knappen kan være forsvundet (alt hentet): flyt fokus til en synlig knap i afsnittet.
+        (get.hidden ? remove : get).focus();
       });
     });
 

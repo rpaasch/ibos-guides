@@ -55,7 +55,7 @@ Alt foregår under menupunktet **Guides**.
 - **Kort beskrivelse i menuen:** udfyld **Uddrag** (excerpt).
 - **Skjul en side:** sæt flueben ved "Skjul i menu …" i boksen **Visning**.
 - **Udgiv:** tryk **Opdatér**. Næste gang brugerne åbner appen med internet, får de beskeden "Ny version klar – Genindlæs".
-- **Tilgængelighedstjek:** boksen af samme navn og kolonnen **Tjek** i listen viser fx manglende alt-tekster, video uden undertekster, tomme billedblokke, eksempeltekst fra mønstre og spring i overskriftsniveauer.
+- **Tilgængelighedstjek:** boksen af samme navn og kolonnen **Tjek** i listen viser fx manglende alt-tekster, video uden undertekster, video der afspilles automatisk, tomme billedblokke, eksempeltekst fra mønstre og spring i overskriftsniveauer.
 
 ### App-indstillinger
 Findes på guidens øverste side i boksen **App-indstillinger** i panelet til højre i editoren (under Placering). Guidens **titel** er appens navn, og teksten i editoren er appens forside.

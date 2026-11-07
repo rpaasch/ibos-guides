@@ -354,7 +354,7 @@ function ibos_guides_videos_section( $videos ) {
 		)
 	) . '</p>
   <p id="videos-status" class="videos-status" role="status" aria-live="polite"></p>
-  <progress id="videos-progress" max="100" value="0" hidden></progress>
+  <progress id="videos-progress" max="100" value="0" aria-label="' . esc_attr__( 'Hentning af videoer', 'ibos-guides' ) . '" hidden></progress>
   <p class="videos-actions">
     <button type="button" class="button" id="videos-get" data-mb="' . esc_attr( $mb ) . '">' . esc_html( sprintf( /* translators: %s: megabyte */ __( 'Hent videoer (ca. %s MB)', 'ibos-guides' ), $mb ) ) . '</button>
     <button type="button" class="button button--secondary" id="videos-remove" hidden>' . esc_html__( 'Fjern hentede videoer', 'ibos-guides' ) . '</button>

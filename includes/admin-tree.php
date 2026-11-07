@@ -182,9 +182,11 @@ function ibos_guides_child_ids( $parent_id ) {
  *
  * @param string $done Hvad der skete (moved, copied, trashed, restored).
  * @param int    $id   Siden, det drejer sig om.
+ * @param string $dir  Ved op/ned: retningen (så fokus kan sættes på samme knap igen).
  */
-function ibos_guides_tree_redirect( $done, $id ) {
-	wp_safe_redirect( admin_url( 'admin.php?page=ibos-guides&ibg_done=' . rawurlencode( $done ) . '&ibg_id=' . (int) $id . '#ibg-item-' . (int) $id ) );
+function ibos_guides_tree_redirect( $done, $id, $dir = '' ) {
+	$dir = in_array( $dir, array( 'up', 'down' ), true ) ? '&ibg_dir=' . $dir : '';
+	wp_safe_redirect( admin_url( 'admin.php?page=ibos-guides&ibg_done=' . rawurlencode( $done ) . '&ibg_id=' . (int) $id . $dir . '#ibg-item-' . (int) $id ) );
 	exit;
 }
 
@@ -246,7 +248,7 @@ function ibos_guides_move() {
 		list( $sibs[ $i ], $sibs[ $j ] ) = array( $sibs[ $j ], $sibs[ $i ] );
 		ibos_guides_set_order( $post->post_parent, $sibs );
 	}
-	ibos_guides_tree_redirect( 'moved', $id );
+	ibos_guides_tree_redirect( 'moved', $id, $dir );
 }
 
 /* Flyt til et andet kapitel (eller en anden guide); lægges sidst dér. */
@@ -396,7 +398,7 @@ function ibos_guides_tree_page() {
 						<input type="hidden" name="action" value="ibos_guides_untrash">
 						<input type="hidden" name="id" value="<?php echo (int) $did; ?>">
 						<?php wp_nonce_field( 'ibos_guides_untrash_' . $did ); ?>
-						<button type="submit" class="button-link"><?php esc_html_e( 'Fortryd', 'ibos-guides' ); ?></button>
+						<button type="submit" class="button-link" id="ibg-undo"><?php esc_html_e( 'Fortryd', 'ibos-guides' ); ?></button>
 					</form>
 				<?php elseif ( 'copied' === $done ) : ?>
 					<a href="<?php echo esc_url( get_edit_post_link( $did ) ); ?>"><?php esc_html_e( 'Redigér kopien', 'ibos-guides' ); ?></a>
@@ -411,7 +413,7 @@ function ibos_guides_tree_page() {
 				<li><?php esc_html_e( 'Ændringer gemmes med det samme, og appen får en ny version.', 'ibos-guides' ); ?></li>
 			</ul>
 		</div>
-		<p id="ibg-tree-status" class="ibg-tree-status" role="status" aria-live="polite"></p>
+		<p id="ibg-tree-status" class="ibg-tree-status" role="status" aria-live="polite"<?php echo ( $did && isset( $msgs[ $done ] ) && get_post( $did ) ) ? ' data-announce="' . esc_attr( sprintf( $msgs[ $done ], get_the_title( $did ) ) ) . '" data-focus="' . esc_attr( $done . ':' . $did ) . '"' : ''; ?>></p>
 		<?php if ( empty( $index['kids'][0] ) ) : ?>
 			<p><?php esc_html_e( 'Der er ingen guides endnu. Opret en ny guide, eller importér O&M-teknik eller Ledsageteknik.', 'ibos-guides' ); ?></p>
 		<?php endif; ?>
@@ -454,6 +456,7 @@ function ibos_guides_tree_page() {
 		.ibg-dragging .ibg-list { min-height:2rem; outline:1px dashed #c3c4c7; outline-offset:2px; }
 		.ui-sortable-helper > .ibg-row { box-shadow:0 6px 18px rgba(0,0,0,.18); }
 		.ibg-flash > .ibg-row { background:#edfaef; transition:background 1s; }
+		@media (prefers-reduced-motion: reduce) { .ibg-flash > .ibg-row { transition:none; } }
 		.ibg-tree-wrap.is-saving .ibg-tree { opacity:.7; pointer-events:none; }
 		li:target > .ibg-row { background:#fcf9e8; }
 	</style>

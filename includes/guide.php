@@ -430,6 +430,7 @@ function ibos_guides_check( $post ) {
 	$videos     = 0;
 	$tracks     = 0;
 	$empty_vid  = false;
+	$autoplay   = false;
 	$h1         = false;
 	$last       = 1;
 	$skip       = '';
@@ -447,6 +448,9 @@ function ibos_guides_check( $post ) {
 			continue;
 		}
 		if ( 'VIDEO' === $tag ) {
+			if ( null !== $p->get_attribute( 'autoplay' ) ) {
+				$autoplay = true;
+			}
 			if ( is_string( $p->get_attribute( 'src' ) ) ) {
 				++$videos;
 			} else {
@@ -474,6 +478,9 @@ function ibos_guides_check( $post ) {
 	}
 	if ( function_exists( 'ibos_guides_has_sample' ) && ibos_guides_has_sample( $html ) ) {
 		$w[] = __( 'Der står stadig eksempeltekst fra et mønster – tekst i firkantede parenteser, der starter med ✎. Skriv den om, eller slet blokken.', 'ibos-guides' );
+	}
+	if ( $autoplay ) {
+		$w[] = __( 'En video afspilles automatisk. Slå "Afspil automatisk" fra i videoblokken – lyd og bevægelse, der starter af sig selv, forstyrrer skærmlæsere og kan ikke altid stoppes.', 'ibos-guides' );
 	}
 	if ( $videos > $tracks ) {
 		$w[] = __( 'En video mangler undertekster. Vælg videoblokken → "Tekstspor" og upload en undertekstfil (.vtt) med typen "Undertekster" eller "Billedtekster". Beskriv også kort i teksten, hvad videoen viser.', 'ibos-guides' );

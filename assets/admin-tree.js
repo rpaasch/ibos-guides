@@ -54,6 +54,28 @@
     });
   }
 
+  // Efter ↑/↓, Flyt til, Kopiér og Papirkurv genindlæses siden: læs beskeden op, og sæt
+  // fokus tilbage, hvor tastaturbrugeren var – ikke øverst på siden.
+  (function () {
+    var msg = $status.attr('data-announce');
+    var f = ($status.attr('data-focus') || '').split(':');
+    if (!msg) { return; }
+    var $li = $('#ibg-item-' + parseInt(f[1], 10));
+    var $target = $();
+    if (f[0] === 'moved') {
+      var dir = new URLSearchParams(location.search).get('ibg_dir');
+      $target = $li.find('> .ibg-row .ibg-' + (dir === 'down' ? 'down' : 'up') + ' button').filter(function () { return $(this).css('visibility') !== 'hidden'; });
+      if (!$target.length) { $target = $li.find('> .ibg-row .ibg-up button, > .ibg-row .ibg-down button').filter(function () { return $(this).css('visibility') !== 'hidden'; }); }
+    } else if (f[0] === 'trashed') {
+      $target = $('#ibg-undo');
+    }
+    if (!$target.length) { $target = $li.find('> .ibg-row .ibg-title a').first(); }
+    // Efter WordPress' egne scripts (de kan ellers flytte fokus igen ved indlæsning).
+    $(window).on('load', function () {
+      window.setTimeout(function () { $target.first().trigger('focus'); say(msg); }, 50);
+    });
+  })();
+
   $(document).on('submit', '.ibg-trash', function (e) {
     var msg = (cfg.confirm || '').replace('%s', $(this).data('title'));
     if (!window.confirm(msg)) { e.preventDefault(); }
