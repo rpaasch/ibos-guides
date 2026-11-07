@@ -233,6 +233,19 @@ function ibos_guides_editor_assets() {
 		return;
 	}
 	wp_enqueue_script( 'ibos-guides-editor', plugins_url( 'assets/editor.js', IBOS_GUIDES_FILE ), array( 'wp-hooks', 'wp-compose', 'wp-element', 'wp-components', 'wp-block-editor', 'wp-data', 'wp-core-data', 'wp-plugins', 'wp-editor', 'wp-edit-post' ), IBOS_GUIDES_VERSION, false );
+	wp_localize_script(
+		'ibos-guides-editor',
+		'ibgEditor',
+		array(
+			'preview' => add_query_arg(
+				array(
+					'action'   => 'ibos_guides_preview',
+					'_wpnonce' => wp_create_nonce( 'ibos_guides_preview' ),
+				),
+				admin_url( 'admin-post.php' )
+			),
+		)
+	);
 }
 
 /* ---------------------------------------------------------------------------

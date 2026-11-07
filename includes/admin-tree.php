@@ -394,6 +394,27 @@ function ibos_guides_untrash() {
 	ibos_guides_tree_redirect( 'restored', $id );
 }
 
+/* Forhåndsvisning i appens design. Kun for brugere, der må redigere siden; adressen ligger i
+   WordPress-administrationen, så appens service worker aldrig griber ind, og intet caches. */
+add_action( 'admin_post_ibos_guides_preview', 'ibos_guides_preview' );
+function ibos_guides_preview() {
+	$id    = isset( $_GET['id'] ) ? absint( $_GET['id'] ) : 0;
+	$nonce = isset( $_GET['_wpnonce'] ) ? sanitize_key( wp_unslash( $_GET['_wpnonce'] ) ) : '';
+	if ( ! wp_verify_nonce( $nonce, 'ibos_guides_preview' ) ) {
+		wp_die( esc_html__( 'Linket til forhåndsvisningen er udløbet. Åbn den igen fra editoren.', 'ibos-guides' ), '', array( 'response' => 403 ) );
+	}
+	$post = get_post( $id );
+	if ( ! $post || IBOS_GUIDES_CPT !== $post->post_type || 'trash' === $post->post_status || ! current_user_can( 'edit_post', $id ) ) {
+		wp_die( esc_html__( 'Du har ikke adgang til at se denne side.', 'ibos-guides' ), '', array( 'response' => 403 ) );
+	}
+	nocache_headers();
+	header( 'Content-Type: text/html; charset=utf-8' );
+	header( 'X-Robots-Tag: noindex, nofollow' );
+	header( 'Referrer-Policy: same-origin' );
+	echo ibos_guides_render_preview( $post ); // phpcs:ignore WordPress.Security.EscapeOutput.OutputNotEscaped -- escapet ved opbygning.
+	exit;
+}
+
 /* ---------------------------------------------------------------------------
  * Siden "Oversigt"
  * ------------------------------------------------------------------------- */
@@ -586,6 +607,9 @@ function ibos_guides_tree_item( $p, $depth, $gid, $index ) {
 				<?php if ( 0 === $depth && $in_app ) : ?><span class="ibg-addr"><?php echo esc_html( wp_parse_url( ibos_guides_base_url( $p ), PHP_URL_PATH ) ); ?></span><?php endif; ?>
 			</span>
 			<a class="button button-small ibg-edit" href="<?php echo esc_url( get_edit_post_link( $p->ID ) ); ?>" aria-label="<?php echo esc_attr( sprintf( /* translators: %s: titel */ __( 'Rediger "%s"', 'ibos-guides' ), $title ) ); ?>"><?php esc_html_e( 'Rediger', 'ibos-guides' ); ?></a>
+			<?php if ( ! $in_app ) : ?>
+				<a class="button button-small" href="<?php echo esc_url( ibos_guides_preview_url( $p->ID ) ); ?>" target="_blank" aria-label="<?php echo esc_attr( sprintf( /* translators: %s: titel */ __( 'Forhåndsvis "%s" (åbner i et nyt vindue)', 'ibos-guides' ), $title ) ); ?>"><?php esc_html_e( 'Forhåndsvis', 'ibos-guides' ); ?></a>
+			<?php endif; ?>
 			<?php if ( $in_app ) : ?>
 				<a class="button button-small" href="<?php echo esc_url( 0 === $depth ? ibos_guides_base_url( $p ) : get_permalink( $p ) ); ?>" aria-label="<?php echo esc_attr( 0 === $depth ? sprintf( /* translators: %s: titel */ __( 'Åbn appen "%s"', 'ibos-guides' ), $title ) : sprintf( /* translators: %s: titel */ __( 'Vis "%s" i appen', 'ibos-guides' ), $title ) ); ?>"><?php echo esc_html( 0 === $depth ? __( 'Åbn appen', 'ibos-guides' ) : __( 'Vis', 'ibos-guides' ) ); ?></a>
 			<?php endif; ?>
@@ -744,6 +768,9 @@ function ibos_guides_box_place( $post ) {
 	<?php endif; ?>
 	<?php if ( 'auto-draft' !== $post->post_status && ( $new_parent || 0 === $depth ) ) : ?>
 		<p><a class="button" href="<?php echo esc_url( admin_url( 'post-new.php?post_type=' . IBOS_GUIDES_CPT . '&ibg_parent=' . $new_parent ) ); ?>"><?php echo esc_html( $new_label[ min( $depth, 3 ) ] ); ?></a></p>
+	<?php endif; ?>
+	<?php if ( 'auto-draft' !== $post->post_status && ibos_guides_root( $post ) ) : ?>
+		<p><a href="<?php echo esc_url( ibos_guides_preview_url( $post->ID ) ); ?>" target="_blank"><?php esc_html_e( 'Forhåndsvis i appen (senest gemte udgave)', 'ibos-guides' ); ?><span class="screen-reader-text"> <?php esc_html_e( '(åbner i et nyt vindue)', 'ibos-guides' ); ?></span></a></p>
 	<?php endif; ?>
 	<?php if ( 'publish' === $post->post_status && ibos_guides_in_app( $post ) && ( $depth > 0 || ibos_guides_is_guide( $post ) ) ) : ?>
 		<p><a href="<?php echo esc_url( 0 === $depth ? ibos_guides_base_url( $post ) : get_permalink( $post ) ); ?>"><?php echo esc_html( 0 === $depth ? __( 'Åbn appen', 'ibos-guides' ) : __( 'Vis siden i appen', 'ibos-guides' ) ); ?></a></p>

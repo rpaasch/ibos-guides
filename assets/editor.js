@@ -207,3 +207,50 @@
     }
   });
 })();
+
+/* "Forhåndsvis i appen": gemmer (kladder) eller autogemmer (udgivne sider) og åbner siden i
+   appens design i et nyt vindue. */
+(function () {
+  'use strict';
+  if (!window.wp || !wp.plugins || !wp.data || !wp.element || !wp.components || !window.ibgEditor) { return; }
+  var el = wp.element.createElement;
+  var StatusInfo = (wp.editor && wp.editor.PluginPostStatusInfo) || (wp.editPost && wp.editPost.PluginPostStatusInfo);
+  if (!StatusInfo) { return; }
+
+  function openPreview() {
+    var ed = wp.data.select('core/editor');
+    var act = wp.data.dispatch('core/editor');
+    var id = ed.getCurrentPostId();
+    // Vinduet åbnes med det samme (ellers blokeres det som pop op), og adressen sættes, når der er gemt.
+    var w = window.open('', 'ibg-preview-' + id);
+    if (w) {
+      w.document.title = 'Forhåndsvisning';
+      w.document.body.innerHTML = '<p style="font:16px/1.5 system-ui,sans-serif;padding:1rem">Gemmer og åbner forhåndsvisningen …</p>';
+    }
+    var status = ed.getEditedPostAttribute('status');
+    var save;
+    if (!ed.isEditedPostDirty() && !ed.isEditedPostNew()) {
+      save = Promise.resolve();
+    } else if (status === 'publish' || status === 'private' || status === 'future') {
+      // Udgivne sider: ændringerne gemmes som autogem, så borgerne ikke ser dem endnu.
+      save = act.autosave();
+    } else {
+      save = act.savePost();
+    }
+    Promise.resolve(save).then(function () {
+      var url = window.ibgEditor.preview + '&id=' + encodeURIComponent(id);
+      if (w) { w.location.href = url; } else { window.open(url, 'ibg-preview-' + id); }
+    }, function () {
+      if (w) { w.document.body.innerHTML = '<p style="font:16px/1.5 system-ui,sans-serif;padding:1rem">Siden kunne ikke gemmes. Prøv igen.</p>'; }
+    });
+  }
+
+  wp.plugins.registerPlugin('ibos-guides-preview', {
+    render: function () {
+      return el(StatusInfo, { className: 'ibg-preview-row' },
+        el('div', { style: { width: '100%' } },
+          el(wp.components.Button, { variant: 'secondary', onClick: openPreview, style: { width: '100%', justifyContent: 'center' } }, 'Forhåndsvis i appen'),
+          el('p', { style: { margin: '.5em 0 0', color: '#50575e', fontSize: '12px' } }, 'Viser siden, som borgerne vil se den – også kladder og ændringer, der ikke er udgivet. Åbner i et nyt vindue.')));
+    }
+  });
+})();

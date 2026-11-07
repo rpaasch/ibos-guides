@@ -73,6 +73,7 @@ function ibos_guides_layout( $guide, $a ) {
 	$name  = get_the_title( $guide );
 	$logo  = $s['logo_id'] ? wp_get_attachment_image( $s['logo_id'], 'medium', false, array( 'class' => 'brand-logo', 'alt' => '' ) ) : '';
 	$dev   = defined( 'WP_DEBUG' ) && WP_DEBUG && isset( $_GET['ibg-nosw'] ); // phpcs:ignore WordPress.Security.NonceVerification.Recommended
+	$prev  = ! empty( $a['preview'] ); // Forhåndsvisning for redaktører: ingen service worker eller manifest.
 	ob_start();
 	?>
 <!doctype html>
@@ -86,7 +87,11 @@ function ibos_guides_layout( $guide, $a ) {
 <?php endif; ?>
 <meta name="theme-color" content="<?php echo esc_attr( $s['color'] ); ?>">
 <meta name="color-scheme" content="light dark">
+<?php if ( $prev ) : ?>
+<meta name="robots" content="noindex, nofollow">
+<?php else : ?>
 <link rel="manifest" href="<?php echo esc_url( $base . 'manifest.webmanifest' ); ?>">
+<?php endif; ?>
 <link rel="icon" href="<?php echo esc_url( $base . 'icons/favicon-32.png' ); ?>" sizes="32x32" type="image/png">
 <link rel="apple-touch-icon" href="<?php echo esc_url( $base . 'icons/apple-touch-icon.png' ); ?>">
 <meta name="mobile-web-app-capable" content="yes">
@@ -99,7 +104,7 @@ function ibos_guides_layout( $guide, $a ) {
 <script src="<?php echo esc_url( ibos_guides_asset( 'qrcode.js' ) ); ?>" defer></script>
 <script src="<?php echo esc_url( ibos_guides_asset( 'app.js' ) ); ?>" defer></script>
 </head>
-<body data-base="<?php echo esc_url( $base ); ?>"<?php echo $dev ? ' data-nosw="1"' : ''; ?> class="<?php echo esc_attr( isset( $a['body_class'] ) ? $a['body_class'] : '' ); ?>">
+<body data-base="<?php echo esc_url( $base ); ?>"<?php echo $dev ? ' data-nosw="1"' : ''; ?><?php echo $prev ? ' data-preview="1"' : ''; ?> class="<?php echo esc_attr( isset( $a['body_class'] ) ? $a['body_class'] : '' ); ?>">
 <a class="skip-link" href="#indhold"><?php esc_html_e( 'Spring til indhold', 'ibos-guides' ); ?></a>
 <header class="site-header">
 	<div class="wrap header-inner">
@@ -332,6 +337,143 @@ function ibos_guides_render_special( $guide, $which ) {
 }
 
 /**
+ * Adresse til forhåndsvisning af en side (kun for redaktører; se ibos_guides_preview()).
+ *
+ * @param int $id Side.
+ * @return string
+ */
+function ibos_guides_preview_url( $id ) {
+	return add_query_arg(
+		array(
+			'action'   => 'ibos_guides_preview',
+			'id'       => (int) $id,
+			'_wpnonce' => wp_create_nonce( 'ibos_guides_preview' ),
+		),
+		admin_url( 'admin-post.php' )
+	);
+}
+
+/**
+ * Forhåndsvisning af en side i appens design – også kladder og ikke-gemte ændringer (autogem).
+ * Menu, brødkrummer og forrige/næste viser hele guiden inkl. kladder, og linkene fører til
+ * forhåndsvisningen af de sider.
+ *
+ * @param WP_Post $post Side.
+ * @return string
+ */
+function ibos_guides_render_preview( $post ) {
+	$guide = ibos_guides_root( $post );
+	$index = ibos_guides_tree_index();
+	$id    = (int) $post->ID;
+	$s     = ibos_guides_settings( $guide );
+	$name  = function ( $p ) {
+		$t = ibos_guides_menu_title( $p );
+		return '' !== trim( $t ) ? $t : __( '(uden titel)', 'ibos-guides' );
+	};
+	// Seneste ikke-gemte ændringer (autogem) fra den aktuelle bruger.
+	$view     = $post;
+	$autosave = wp_get_post_autosave( $id, get_current_user_id() );
+	$use_auto = $autosave && strtotime( $autosave->post_modified_gmt ) >= strtotime( $post->post_modified_gmt );
+	if ( $use_auto ) {
+		$view               = clone $post;
+		$view->post_title   = $autosave->post_title;
+		$view->post_content = $autosave->post_content;
+		$view->post_excerpt = $autosave->post_excerpt;
+	}
+	$is_home = $id === (int) $guide->ID;
+	$kids    = isset( $index['kids'][ $id ] ) ? $index['kids'][ $id ] : array();
+
+	// Status i appen.
+	if ( 'publish' !== $post->post_status ) {
+		$state = __( 'Siden er ikke udgivet og vises ikke i appen endnu.', 'ibos-guides' );
+	} elseif ( ! ibos_guides_in_app( $post ) ) {
+		$state = __( 'Siden er udgivet, men vises ikke i appen, fordi et niveau over den ikke er udgivet.', 'ibos-guides' );
+	} else {
+		$state = __( 'Siden er udgivet og vises i appen.', 'ibos-guides' );
+	}
+	if ( $use_auto ) {
+		$state .= ' ' . __( 'Forhåndsvisningen viser dine seneste ændringer, som endnu ikke er gemt.', 'ibos-guides' );
+	}
+	$banner = '<div class="preview-banner" role="note"><p><strong>' . esc_html__( 'Forhåndsvisning', 'ibos-guides' ) . '</strong> – '
+		. esc_html__( 'kun redaktører kan se den. Sådan ser siden ud i appen.', 'ibos-guides' ) . ' ' . esc_html( $state ) . '</p>'
+		. '<p><a href="' . esc_url( get_edit_post_link( $id ) ) . '">' . esc_html__( 'Tilbage til editoren', 'ibos-guides' ) . '</a></p></div>';
+
+	// Brødkrummer.
+	$trail = array();
+	foreach ( array_merge( array_reverse( get_post_ancestors( $post ) ), array( $id ) ) as $aid ) {
+		$a       = (int) $aid === $id ? $view : get_post( $aid );
+		$trail[] = array( (int) $aid === (int) $guide->ID ? __( 'Forside', 'ibos-guides' ) : $name( $a ), ibos_guides_preview_url( $aid ) );
+	}
+
+	// Undermenu (også kladder, markeret).
+	$menu = '';
+	$list = array();
+	foreach ( $kids as $k ) {
+		if ( ! ibos_guides_is_hidden( $k ) ) {
+			$list[] = $index['posts'][ $k ];
+		}
+	}
+	if ( $list ) {
+		$style = get_post_meta( $id, '_ibg_child_menu', true );
+		$style = $style ? $style : $s['menu'];
+		$label = $is_home ? __( 'Indhold', 'ibos-guides' ) : sprintf( /* translators: %s: kapitel */ __( 'Sider i %s', 'ibos-guides' ), $name( $view ) );
+		$menu .= '<section class="child-menu" aria-labelledby="menu-overskrift"><h2 id="menu-overskrift">' . esc_html( $label ) . '</h2>';
+		$menu .= '<nav aria-labelledby="menu-overskrift"><ul class="menu menu--' . ( 'list' === $style ? 'list' : 'tiles' ) . '">';
+		foreach ( $list as $c ) {
+			$draft = 'publish' !== $c->post_status ? ' (' . __( 'ikke udgivet', 'ibos-guides' ) . ')' : '';
+			$menu .= '<li><a href="' . esc_url( ibos_guides_preview_url( $c->ID ) ) . '">' . esc_html( $name( $c ) . $draft ) . '</a>';
+			if ( has_excerpt( $c ) ) {
+				$menu .= '<p>' . esc_html( get_the_excerpt( $c ) ) . '</p>';
+			}
+			$menu .= '</li>';
+		}
+		$menu .= '</ul></nav></section>';
+	}
+
+	// Forrige/næste i læserækkefølge (inkl. kladder, uden skjulte sider).
+	$order = array_values(
+		array_filter(
+			ibos_guides_reading_order( $guide->ID, $index ),
+			function ( $o ) use ( $id ) {
+				return $o === $id || ! ibos_guides_is_hidden( $o );
+			}
+		)
+	);
+	$i     = array_search( $id, $order, true );
+	$pager = '';
+	if ( false !== $i ) {
+		$links = array(
+			'prev' => $i > 0 ? $order[ $i - 1 ] : 0,
+			'next' => isset( $order[ $i + 1 ] ) ? $order[ $i + 1 ] : 0,
+		);
+		$pager = '<nav class="pager" aria-label="' . esc_attr__( 'Forrige og næste side', 'ibos-guides' ) . '"><div class="wrap"><ul>';
+		foreach ( $links as $dir => $pid ) {
+			if ( ! $pid ) {
+				continue;
+			}
+			$label  = 'prev' === $dir ? __( 'Forrige', 'ibos-guides' ) : __( 'Næste', 'ibos-guides' );
+			$title  = (int) $pid === (int) $guide->ID ? __( 'Forside', 'ibos-guides' ) : $name( $index['posts'][ $pid ] );
+			$pager .= '<li class="pager-' . $dir . '"><a href="' . esc_url( ibos_guides_preview_url( $pid ) ) . '" rel="' . $dir . '"><span class="pager-label">' . esc_html( $label ) . '<span class="visually-hidden"> ' . esc_html__( 'side', 'ibos-guides' ) . '</span>:</span> <span class="pager-title">' . esc_html( $title ) . '</span></a></li>';
+		}
+		$pager .= '</ul></div></nav>';
+	}
+
+	$body = $banner . '<h1>' . esc_html( '' !== trim( $view->post_title ) ? $view->post_title : __( '(uden titel)', 'ibos-guides' ) ) . '</h1>' . "\n" . ibos_guides_content( $view, false ) . "\n" . $menu;
+	return ibos_guides_layout(
+		$guide,
+		array(
+			/* translators: %s: sidens titel */
+			'title'       => sprintf( __( 'Forhåndsvisning: %s', 'ibos-guides' ), $name( $view ) ),
+			'breadcrumbs' => ibos_guides_breadcrumbs( $trail ),
+			'body'        => $body,
+			'pager'       => $pager,
+			'is_home'     => $is_home,
+			'preview'     => true,
+		)
+	);
+}
+
+/**
  * Afsnittet "Videoer uden internet" på Installér-siden (vises kun med JavaScript og Cache API).
  *
  * @param array[] $videos Fra ibos_guides_collect().
@@ -351,15 +493,16 @@ function ibos_guides_videos_section( $videos ) {
 	if ( $size ) {
 		$intro .= ' ' . ( 1 === $count
 			/* translators: %s: størrelse, fx "ca. 12 MB" */
-			? sprintf( __( 'Den fylder %s på telefonen – hent den gerne på wifi.', 'ibos-guides' ), $size )
+			? sprintf( __( 'Den fylder %s på telefonen.', 'ibos-guides' ), $size )
 			/* translators: %s: størrelse, fx "ca. 12 MB" */
-			: sprintf( __( 'De fylder %s på telefonen – hent dem gerne på wifi.', 'ibos-guides' ), $size ) );
+			: sprintf( __( 'De fylder %s på telefonen.', 'ibos-guides' ), $size ) );
 	}
 	$button = ( 1 === $count ? __( 'Hent videoen', 'ibos-guides' ) : __( 'Hent videoer', 'ibos-guides' ) ) . ( $size ? ' (' . $size . ')' : '' );
 	return '
 <section id="videos" class="videos-offline" aria-labelledby="videos-heading" data-videos="' . esc_attr( wp_json_encode( $videos, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE ) ) . '" hidden>
   <h2 id="videos-heading">' . esc_html__( 'Videoer uden internet', 'ibos-guides' ) . '</h2>
   <p>' . esc_html( $intro ) . '</p>
+  <p><strong>' . esc_html__( 'Tip: Hent videoerne, mens du er på wifi, så de ikke bruger af dit mobildata.', 'ibos-guides' ) . '</strong></p>
   <p id="videos-status" class="videos-status" role="status" aria-live="polite"></p>
   <progress id="videos-progress" max="100" value="0" aria-label="' . esc_attr__( 'Hentning af videoer', 'ibos-guides' ) . '" hidden></progress>
   <p class="videos-actions">

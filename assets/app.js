@@ -31,6 +31,8 @@
   if (body.hasAttribute('data-nosw')) {
     // Fejlsøgning (?ibg-nosw med WP_DEBUG): ingen offline-cache.
     if ('serviceWorker' in navigator) navigator.serviceWorker.getRegistrations().then(function (rs) { rs.forEach(function (r) { r.unregister(); }); });
+  } else if (body.hasAttribute('data-preview')) {
+    // Forhåndsvisning for redaktører: ingen offline-cache (og ingen afmelding af en installeret app).
   } else if ('serviceWorker' in navigator && window.isSecureContext) {
     var reloading = false;
     var hadController = !!navigator.serviceWorker.controller;
@@ -413,26 +415,72 @@
       status.focus();
     }
 
-    // Hent én video direkte ned i cachen (strømmes, så hele filen ikke ligger i hukommelsen).
+    // Hent én video ned i cachen i bidder på 2 MB (se sw.js). Indholdsfortegnelsen gemmes
+    // til sidst, så en halvt hentet video aldrig tæller som hentet.
+    var PART = 2 * 1048576;
+    function partUrl(u, i) { return u + (u.indexOf('?') < 0 ? '?' : '&') + 'ibg-part=' + i; }
     function fetchOne(cache, v, progress) {
+      var part = 0;
+      function cleanup(e) {
+        var dels = [];
+        for (var i = 0; i < part; i++) dels.push(cache.delete(partUrl(v.u, i)));
+        return Promise.all(dels).then(function () { throw e; });
+      }
       return fetch(v.u, { credentials: 'omit' }).then(function (res) {
         var type = (res.headers.get('content-type') || '').split(';')[0].trim();
         // En fejlside eller en omdirigering må aldrig gemmes som video.
         if (!res.ok || res.redirected || !/^(video|audio)\//i.test(type)) throw new Error('bad');
-        var body = res.body;
-        if (body && window.TransformStream && body.pipeThrough) {
-          body = body.pipeThrough(new TransformStream({
-            transform: function (chunk, ctl) { progress(chunk.length); ctl.enqueue(chunk); }
-          }));
-          return cache.put(v.u, new Response(body, { headers: { 'Content-Type': type } }));
+        var size = 0, buf = [], bufLen = 0;
+        function flush() {
+          if (!bufLen) return Promise.resolve();
+          var blob = new Blob(buf, { type: type });
+          buf = []; bufLen = 0;
+          return cache.put(partUrl(v.u, part++), new Response(blob, { headers: { 'Content-Type': type } }));
         }
-        return res.blob().then(function (b) { progress(b.size); return cache.put(v.u, new Response(b, { headers: { 'Content-Type': type } })); });
-      });
+        function add(chunk) {
+          var puts = [];
+          while (chunk.length) {
+            var take = chunk.subarray(0, PART - bufLen);
+            buf.push(take); bufLen += take.length; size += take.length;
+            chunk = chunk.subarray(take.length);
+            if (bufLen >= PART) puts.push(flush());
+          }
+          return Promise.all(puts);
+        }
+        var job;
+        if (res.body && res.body.getReader) {
+          var reader = res.body.getReader();
+          var pump = function () {
+            return reader.read().then(function (r) {
+              if (r.done) return flush();
+              progress(r.value.length);
+              return add(r.value).then(pump);
+            });
+          };
+          job = pump();
+        } else {
+          job = res.arrayBuffer().then(function (ab) { progress(ab.byteLength); return add(new Uint8Array(ab)).then(flush); });
+        }
+        return job.then(function () {
+          var meta = JSON.stringify({ size: size, type: type, part: PART, parts: part });
+          return cache.put(v.u, new Response(meta, { headers: { 'Content-Type': 'application/json', 'X-Ibg-Video': 'parts' } }));
+        });
+      }).catch(cleanup);
+    }
+
+    function onCellular() {
+      var c = navigator.connection || navigator.mozConnection || navigator.webkitConnection;
+      return !!(c && (c.type === 'cellular' || c.saveData));
     }
 
     get.addEventListener('click', function () {
       if (busy) return;
       if (!navigator.onLine) { done('Du er ikke på internettet. Prøv igen, når du har forbindelse – helst wifi.'); return; }
+      // Kan telefonen se, at den er på mobildata (fx Android), spørges der først.
+      if (onCellular() && !window.confirm('Du er på mobildata, og videoerne kan bruge meget af dit data (' + get.textContent.replace(/^[^(]*\(|\)$/g, '') + '). Vil du hente dem nu? Vælg Annuller for at vente, til du er på wifi.')) {
+        done('Hentningen er ikke startet. Hent videoerne, når du er på wifi.');
+        return;
+      }
       setBusy(true);
       // Bed browseren om ikke at rydde de hentede videoer, når der mangler plads.
       if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});

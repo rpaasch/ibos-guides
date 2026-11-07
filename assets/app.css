@@ -214,6 +214,8 @@ hr { border: 0; border-top: 1px solid var(--border); margin: 2rem 0; }
 }
 
 /* Statusbesked (ny version mm.) */
+.preview-banner { margin: 1rem 0 1.25rem; padding: .75rem 1rem; border: 3px dashed currentColor; border-radius: var(--radius); background: var(--surface); }
+.preview-banner p { margin: .25rem 0; }
 .update-banner { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .75rem; margin: 0 0 1rem; padding: .75rem 1rem; border: 2px solid currentColor; border-radius: var(--radius); background: var(--surface); }
 .update-banner p { margin: 0; flex: 1 1 12rem; font-weight: 700; }
 .toast {

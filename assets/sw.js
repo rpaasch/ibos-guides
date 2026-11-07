@@ -23,12 +23,14 @@ const CACHE = PREFIX + VERSION;
 // Adresserne normaliseres, som browseren gør (fx %20 og små bogstaver i værtsnavnet).
 const VIDEOS = __VIDEOS__.map((u) => new URL(u, SCOPE).href);
 const VIDEO_SET = new Set(VIDEOS);
-// Senest brugte video holdes i hukommelsen, så spoling ikke læser hele filen fra cachen igen.
-let videoMemo = { url: '', blob: null, type: '' };
 const VIDEO_CACHE = PREFIX + 'videos';
+// En video gemmes i bidder på 2 MB plus en lille indholdsfortegnelse (under videoens egen
+// adresse). Så skal telefonen aldrig have hele filen i hukommelsen – heller ikke ved spoling
+// i en stor video på en ældre iPhone.
+const partUrl = (url, i) => url + (url.indexOf('?') < 0 ? '?' : '&') + 'ibg-part=' + i;
+const baseUrl = (url) => { const u = new URL(url); u.searchParams.delete('ibg-part'); return u.href; };
 
 async function removeApp() {
-  videoMemo = { url: '', blob: null, type: '' };
   for (const k of await caches.keys()) if (k.startsWith(PREFIX)) await caches.delete(k);
   await self.registration.unregister();
 }
@@ -63,10 +65,9 @@ self.addEventListener('activate', (event) => {
       if (key.startsWith(PREFIX) && key !== CACHE && key !== VIDEO_CACHE) await caches.delete(key);
     }
     // Videoer, der ikke længere er i appen (slettet, eller må ikke længere gemmes), fjernes.
-    videoMemo = { url: '', blob: null, type: '' };
     if (await caches.has(VIDEO_CACHE)) {
       const vc = await caches.open(VIDEO_CACHE);
-      for (const r of await vc.keys()) if (!VIDEO_SET.has(r.url)) await vc.delete(r);
+      for (const r of await vc.keys()) if (!VIDEO_SET.has(baseUrl(r.url))) await vc.delete(r);
     }
     await self.clients.claim();
   })());
@@ -93,37 +94,54 @@ async function checkStillPublished() {
 }
 
 // En hentet video – hele filen eller den bid (Range), afspilleren beder om.
+// En hentet video – hele filen eller den bid (Range), afspilleren beder om. Svaret strømmes
+// bid for bid fra cachen.
 async function serveVideo(req) {
-  let blob, type;
-  // Findes videoen stadig i cachen? (Borgeren kan have fjernet den på "Installér appen".)
-  const hit = await (await caches.open(VIDEO_CACHE)).match(req.url);
-  if (!hit) { videoMemo = { url: '', blob: null, type: '' }; return fetch(req); }
-  if (videoMemo.url === req.url && videoMemo.blob) {
-    ({ blob, type } = videoMemo);
-  } else {
-    blob = await hit.blob();
-    type = hit.headers.get('content-type') || 'video/mp4';
-    videoMemo = { url: req.url, blob, type };
+  const cache = await caches.open(VIDEO_CACHE);
+  // Findes videoen stadig? (Borgeren kan have fjernet den på "Installér appen".)
+  const hit = await cache.match(req.url);
+  if (!hit || hit.headers.get('X-Ibg-Video') !== 'parts') return fetch(req);
+  const meta = await hit.json();
+  const size = meta.size;
+  const type = meta.type || 'video/mp4';
+  const head = { 'Content-Type': type, 'Accept-Ranges': 'bytes' };
+  let start = 0;
+  let end = size - 1;
+  let status = 200;
+  const rh = req.headers.get('range');
+  if (rh) {
+    const range = /^bytes=(\d*)-(\d*)$/.exec(rh.trim());
+    if (range) {
+      if (range[1] === '' && range[2] === '') {
+        return new Response(null, { status: 416, headers: { 'Content-Range': 'bytes */' + size } });
+      }
+      start = range[1] === '' ? NaN : parseInt(range[1], 10);
+      end = range[2] === '' ? size - 1 : parseInt(range[2], 10);
+      if (isNaN(start)) { start = Math.max(0, size - end); end = size - 1; } // "bytes=-500": de sidste 500
+      end = Math.min(end, size - 1);
+      if (start >= size || end < start) {
+        return new Response(null, { status: 416, headers: { 'Content-Range': 'bytes */' + size } });
+      }
+      status = 206;
+      head['Content-Range'] = 'bytes ' + start + '-' + end + '/' + size;
+    } // Flere intervaller eller ugyldigt: hele filen.
   }
-  const size = blob.size;
-  const range = /^bytes=(\d*)-(\d*)$/.exec((req.headers.get('range') || '').trim());
-  if (!range) {
-    return new Response(blob, { status: 200, headers: { 'Content-Type': type, 'Content-Length': String(size), 'Accept-Ranges': 'bytes' } });
-  }
-  if (range[1] === '' && range[2] === '') {
-    return new Response(null, { status: 416, headers: { 'Content-Range': 'bytes */' + size } });
-  }
-  let start = range[1] === '' ? NaN : parseInt(range[1], 10);
-  let end = range[2] === '' ? size - 1 : parseInt(range[2], 10);
-  if (isNaN(start)) { start = Math.max(0, size - end); end = size - 1; } // "bytes=-500": de sidste 500
-  end = Math.min(end, size - 1);
-  if (start >= size || end < start) {
-    return new Response(null, { status: 416, headers: { 'Content-Range': 'bytes */' + size } });
-  }
-  return new Response(blob.slice(start, end + 1), {
-    status: 206,
-    headers: { 'Content-Type': type, 'Content-Range': 'bytes ' + start + '-' + end + '/' + size, 'Content-Length': String(end - start + 1), 'Accept-Ranges': 'bytes' }
+  head['Content-Length'] = String(end - start + 1);
+  let pos = start;
+  const body = new ReadableStream({
+    async pull(ctl) {
+      if (pos > end) { ctl.close(); return; }
+      const i = Math.floor(pos / meta.part);
+      const r = await cache.match(partUrl(req.url, i));
+      if (!r) { ctl.error(new Error('Videoen mangler en bid')); return; }
+      const buf = new Uint8Array(await r.arrayBuffer());
+      const from = pos - i * meta.part;
+      const to = Math.min(buf.length, end - i * meta.part + 1);
+      ctl.enqueue(buf.subarray(from, to));
+      pos = i * meta.part + to;
+    }
   });
+  return new Response(body, { status, headers: head });
 }
 
 function normalize(url) {

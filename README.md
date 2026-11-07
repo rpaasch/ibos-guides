@@ -70,6 +70,7 @@ Alt foregår under menupunktet **Guides**.
 - **Billeder:** brug billedblokken, og udfyld **Alternativ tekst**. Er billedet kun pynt, så markér det som dekorativt i billedblokkens indstillinger, og lad alt-teksten være tom. Undgå at starte alt-teksten med "Foto af" – skærmlæseren siger allerede "billede".
 - **Kort beskrivelse i menuen:** udfyld **Uddrag** (excerpt).
 - **Skjul en side:** sæt flueben ved "Skjul i menu …" i boksen **Visning**. En skjult side kommer heller ikke med i søgningen og virker ikke uden internet.
+- **Forhåndsvis:** tryk **Forhåndsvis i appen** i panelet til højre (under status). Siden gemmes og åbner i et nyt vindue, præcis som borgerne vil se den i appen – også kladder og ændringer på udgivne sider, der ikke er udgivet endnu (de gemmes som autogem, så borgerne ikke ser dem). Menu, brødkrummer og Forrige/Næste i forhåndsvisningen viser hele guiden inkl. kladder. Kun indloggede redaktører kan åbne forhåndsvisningen. Den findes også i Oversigt (for sider, der ikke er i appen) og i boksen Placering.
 - **Udgiv:** tryk **Gem** (eller **Udgiv** første gang). Næste gang brugerne åbner appen med internet, får de beskeden "Der er en ny version af appen" med knappen **Opdatér nu**.
 - **Tilgængelighedstjek:** panelet af samme navn i fanen **Guide-side** i editoren tjekker siden, mens du skriver, og vises igen lige før du udgiver. **Vis blokken** springer til det sted, der skal rettes. Tjekket finder fx manglende alt-tekst, tomme billed- og videoblokke, video uden undertekster eller med "Afspil automatisk", eksempeltekst fra mønstre, overskrift 1, spring i overskriftsniveauer, links der hedder "klik her" og sider med samme titel som kapitlet. Kolonnen **Tjek** på listen og mærkerne i Oversigt viser det samme.
 
@@ -81,7 +82,9 @@ Brug videoblokken (eller mønstret *Video med forklaring*), og overfør videoen 
 - **Undertekster:** vælg videoblokken → **Tekstspor** i værktøjslinjen → overfør en `.vtt`-fil, typen **Undertekster** (eller **Billedtekster**) og sproget `da`. En `.vtt`-fil kan laves med fx Subtitle Edit eller eksporteres fra YouTube Studio.
 - **Skriv det vigtigste som tekst** på siden, så den kan bruges uden lyd, uden internet og med skærmlæser.
 - **Slå ikke "Afspil automatisk" til.** Lyd, der starter af sig selv, overdøver skærmlæseren. Appen viser altid afspilningsknapper.
-- **Uden internet:** som standard kan borgeren hente videoerne på siden **Installér appen** → *Hent videoer (ca. X MB)*, fx på wifi. Derefter kan de ses og spoles i uden net. Videoer hentes aldrig automatisk, så borgeren ikke uventet bruger data og plads. De kan fjernes igen med *Fjern hentede videoer*.
+- **Uden internet:** som standard kan borgeren hente videoerne på siden **Installér appen** → *Hent videoer (ca. X MB)*. Derefter kan de ses og spoles i uden net. Videoer hentes aldrig automatisk, så borgeren ikke uventet bruger data og plads. De kan fjernes igen med *Fjern hentede videoer*.
+  - **Wifi:** siden opfordrer til at hente videoerne på wifi. Kan telefonen se, at den er på mobildata (fx Android), spørges der først, om borgeren hellere vil vente. iPhone fortæller ikke, om den er på mobildata, så der vises kun opfordringen.
+  - Videoerne gemmes i bidder på 2 MB, så hverken hentning eller afspilning kræver, at hele filen ligger i telefonens hukommelse – heller ikke store videoer på ældre iPhones.
   - På **iPhone og iPad** skal videoerne hentes inde i den installerede app (Safari og appen på hjemmeskærmen har hver sin lagerplads). Siden forklarer det.
   - Kun videoer, der ligger i sitets egne Medier, kan hentes. Videoer fra andre servere kræver altid internet.
 - **Redaktøren** ser videoens størrelse ved blokken og i panelet **Video i appen** (fanen Blok). Her kan *Kan hentes til brug uden internet* slås fra ved meget lange videoer.
@@ -164,7 +167,7 @@ Undtag guidernes adresser, fx `/guides/om-teknik/`, fra sidecache i cache-plugin
 |---|---|
 | `ibos-guides.php` | Plugin-header, indlæsning, aktivering/deaktivering |
 | `includes/post-type.php` | Post typen `ibos_guide_page` (hierarkisk), App-indstillinger, gem, adresse- og kontrasttjek, papirkurv, listevisning |
-| `includes/admin-tree.php` | Guides → Oversigt (træ, træk og slip, flyt, kopiér, papirkurv) og boksen Placering |
+| `includes/admin-tree.php` | Guides → Oversigt (træ, træk og slip, flyt, kopiér, papirkurv), boksen Placering og forhåndsvisning (kun redaktører) |
 | `includes/editor.php` | Skabeloner, mønstre, tilladte blokke, video i appen (offline-markering, videoliste) |
 | `includes/guide.php` | Indstillinger, sidetræ, adresser, version, tilgængelighedstjek |
 | `includes/router.php` | Rewrite-regel pr. guide; serverer sider, `sw.js`, manifest, søgeindeks og ikoner; "410 Gone" og afmeldings-service worker på tidligere adresser |
@@ -177,7 +180,7 @@ Undtag guidernes adresser, fx `/guides/om-teknik/`, fra sidecache i cache-plugin
 | `tools/` | `export-guide.mjs` (Markdown → import-JSON) og `zip.mjs` (pakker pluginet) |
 | `playground/` | Opsætning til WordPress Playground |
 
-**Offline:** service workeren gemmer alle synlige sider, søgeindekset og billederne. Appen får kun en ny version, når det, borgeren ser, faktisk ændrer sig (versionen er en kontrolsum af indholdet). Hentede videoer ligger i en særskilt cache, som overlever nye versioner og afspilles med spoling (HTTP Range). Appen fjerner kun sig selv, når manifestet svarer "410 Gone".
+**Offline:** service workeren gemmer alle synlige sider, søgeindekset og billederne. Appen får kun en ny version, når det, borgeren ser, faktisk ændrer sig (versionen er en kontrolsum af indholdet). Hentede videoer ligger i en særskilt cache i bidder på 2 MB med en lille indholdsfortegnelse; service workeren strømmer den del, afspilleren beder om (HTTP Range), så spoling virker uden at læse hele filen. Cachen overlever nye versioner. Appen fjerner kun sig selv, når manifestet svarer "410 Gone".
 
 ### Udvikling
 
