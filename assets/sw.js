@@ -18,6 +18,11 @@ const ORIGIN = new URL(SCOPE).origin;
 // Filer uden for appens adresse, som appen bruger (uploads og pluginets filer).
 const SHARED = __SHARED__;
 const CACHE = PREFIX + VERSION;
+// Videoer, borgeren selv kan hente til brug uden internet (på siden "Installér appen").
+// De ligger i en særskilt cache, som overlever nye versioner af appen.
+const VIDEOS = __VIDEOS__;
+const VIDEO_SET = new Set(VIDEOS);
+const VIDEO_CACHE = PREFIX + 'videos';
 
 async function removeApp() {
   for (const k of await caches.keys()) if (k.startsWith(PREFIX)) await caches.delete(k);
@@ -51,7 +56,12 @@ self.addEventListener('activate', (event) => {
   event.waitUntil((async () => {
     if (!ACTIVE) { await removeApp(); return; } // Forkert scope: ryd op i stedet for at gribe ind.
     for (const key of await caches.keys()) {
-      if (key.startsWith(PREFIX) && key !== CACHE) await caches.delete(key);
+      if (key.startsWith(PREFIX) && key !== CACHE && key !== VIDEO_CACHE) await caches.delete(key);
+    }
+    // Videoer, der ikke længere er i appen (slettet, eller må ikke længere gemmes), fjernes.
+    if (await caches.has(VIDEO_CACHE)) {
+      const vc = await caches.open(VIDEO_CACHE);
+      for (const r of await vc.keys()) if (!VIDEO_SET.has(r.url)) await vc.delete(r);
     }
     await self.clients.claim();
   })());
@@ -76,6 +86,30 @@ async function checkStillPublished() {
   } catch (e) { /* offline eller netværksfejl: gør intet */ }
 }
 
+// En hentet video – hele filen eller den bid (Range), afspilleren beder om.
+async function serveVideo(req) {
+  const hit = await (await caches.open(VIDEO_CACHE)).match(req.url);
+  if (!hit) return fetch(req);
+  const blob = await hit.blob();
+  const size = blob.size;
+  const type = hit.headers.get('content-type') || 'video/mp4';
+  const range = /^bytes=(\d*)-(\d*)$/.exec((req.headers.get('range') || '').trim());
+  if (!range) {
+    return new Response(blob, { status: 200, headers: { 'Content-Type': type, 'Content-Length': String(size), 'Accept-Ranges': 'bytes' } });
+  }
+  let start = range[1] === '' ? NaN : parseInt(range[1], 10);
+  let end = range[2] === '' ? size - 1 : parseInt(range[2], 10);
+  if (isNaN(start)) { start = Math.max(0, size - end); end = size - 1; } // "bytes=-500": de sidste 500
+  end = Math.min(end, size - 1);
+  if (start >= size || end < start) {
+    return new Response(null, { status: 416, headers: { 'Content-Range': 'bytes */' + size } });
+  }
+  return new Response(blob.slice(start, end + 1), {
+    status: 206,
+    headers: { 'Content-Type': type, 'Content-Range': 'bytes ' + start + '-' + end + '/' + size, 'Content-Length': String(end - start + 1), 'Accept-Ranges': 'bytes' }
+  });
+}
+
 function normalize(url) {
   const u = new URL(url);
   u.search = '';
@@ -89,9 +123,12 @@ const IMG = /^(.*?)(-\d+x\d+)?(-scaled)?\.(jpe?g|png|webp|gif|avif)$/i;
 self.addEventListener('fetch', (event) => {
   const req = event.request;
   if (!ACTIVE || req.method !== 'GET') return;
-  // Video og lyd: browseren henter dem i bidder (Range). De gemmes ikke offline og går
-  // direkte til serveren, så afspilning og spoling virker (også i Safari).
-  if (req.headers.has('range') || req.destination === 'video' || req.destination === 'audio') return;
+  // Video og lyd: browseren henter dem i bidder (Range). Hentede videoer afspilles fra
+  // telefonen (med spoling); alt andet går direkte til serveren.
+  if (req.headers.has('range') || req.destination === 'video' || req.destination === 'audio') {
+    if (VIDEO_SET.has(req.url)) event.respondWith(serveVideo(req));
+    return;
+  }
   const url = new URL(req.url);
   const inScope = req.url.startsWith(SCOPE);
   const shared = url.origin === ORIGIN && (PRECACHE_SET.has(req.url) || SHARED.some((p) => url.pathname.startsWith(p)));

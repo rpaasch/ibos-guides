@@ -246,32 +246,54 @@
     if (initial) { input.value = initial; run(false); }
   }
 
-  // Videoer gemmes ikke offline. Uden net (eller hvis videoen ikke kan hentes) vises en
-  // besked i stedet for en afspiller, der ikke gør noget.
+  // ---------- Video ----------
+  // Videoer kan hentes til brug uden internet på siden "Installér appen". De ligger i en
+  // særskilt cache, som service workeren afspiller fra.
+  var videoCache = 'ibos-guides:' + new URL(root).pathname + ':videos';
+  function videoCached(url) {
+    if (!('caches' in window) || !url) return Promise.resolve(false);
+    return caches.open(videoCache).then(function (c) { return c.match(url); }).then(function (r) { return !!r; }, function () { return false; });
+  }
+
+  // Uden net: hentede videoer afspilles som normalt. Andre erstattes af en besked, der siger,
+  // om og hvor videoen kan hentes.
   function initVideos() {
     var figs = Array.prototype.slice.call(document.querySelectorAll('figure.wp-block-video'));
     if (!figs.length) return;
+    var install = root + 'installer/#videos';
     figs.forEach(function (fig) {
       var note = document.createElement('p');
       note.className = 'video-offline';
       note.hidden = true;
-      note.textContent = 'Videoen kan kun ses med internet. Teksten på siden beskriver det vigtigste.';
+      note.appendChild(document.createTextNode('Videoen kan kun ses med internet. Teksten på siden beskriver det vigtigste.'));
+      if (fig.getAttribute('data-offline') === '1') {
+        note.appendChild(document.createTextNode(' '));
+        var a = document.createElement('a');
+        a.href = install;
+        a.textContent = 'Hent videoerne til brug uden internet';
+        note.appendChild(a);
+        note.appendChild(document.createTextNode(', næste gang du har net.'));
+      }
       fig.insertBefore(note, fig.firstChild);
       var v = fig.querySelector('video');
       // Også på wifi uden internet: kan videoen ikke hentes, vises beskeden.
-      if (v) v.addEventListener('error', function () { fig.dataset.failed = '1'; fig.classList.add('is-offline'); note.hidden = false; }, true);
+      if (v) v.addEventListener('error', function () { fig.dataset.failed = '1'; show(fig, true); }, true);
     });
+    function show(fig, off) {
+      fig.classList.toggle('is-offline', off);
+      fig.querySelector('.video-offline').hidden = !off;
+    }
     function update() {
       var off = !navigator.onLine;
       figs.forEach(function (fig) {
+        var v = fig.querySelector('video');
         if (!off && fig.dataset.failed) {
-          // Nettet er tilbage: prøv at hente videoen igen. Fejler den igen, vises beskeden igen.
+          // Nettet er tilbage: prøv at hente videoen igen.
           delete fig.dataset.failed;
-          var v = fig.querySelector('video');
           if (v) v.load();
         }
-        fig.classList.toggle('is-offline', off);
-        fig.querySelector('.video-offline').hidden = !off;
+        if (!off) { show(fig, false); return; }
+        videoCached(v && (v.currentSrc || v.src)).then(function (cached) { show(fig, !cached); });
       });
     }
     window.addEventListener('online', update);
@@ -279,7 +301,128 @@
     update();
   }
 
+  function mb(bytes) {
+    var m = bytes / 1048576;
+    return (m < 10 ? Math.max(0.1, Math.round(m * 10) / 10) : Math.round(m)).toLocaleString('da-DK');
+  }
+
+  // "Installér appen": hent eller fjern videoerne.
+  function initVideoDownload() {
+    var sec = document.getElementById('videos');
+    if (!sec || !('caches' in window) || !window.fetch) return;
+    var list;
+    try { list = JSON.parse(sec.getAttribute('data-videos')) || []; } catch (e) { return; }
+    if (!list.length) return;
+    sec.hidden = false;
+    var status = document.getElementById('videos-status');
+    var bar = document.getElementById('videos-progress');
+    var get = document.getElementById('videos-get');
+    var remove = document.getElementById('videos-remove');
+    var busy = false;
+
+    function missing() {
+      return Promise.all(list.map(function (v) { return videoCached(v.u); })).then(function (have) {
+        return list.filter(function (v, i) { return !have[i]; });
+      });
+    }
+    function refresh() {
+      return missing().then(function (miss) {
+        var have = list.length - miss.length;
+        var left = miss.reduce(function (n, v) { return n + (v.s || 0); }, 0);
+        remove.hidden = have === 0;
+        get.hidden = miss.length === 0;
+        if (miss.length === 0) {
+          status.textContent = list.length === 1 ? 'Videoen er hentet og virker uden internet.' : 'Alle ' + list.length + ' videoer er hentet og virker uden internet.';
+        } else if (have > 0) {
+          status.textContent = have + ' af ' + list.length + ' videoer er hentet.';
+          get.textContent = 'Hent de resterende videoer (ca. ' + mb(left) + ' MB)';
+        } else {
+          status.textContent = '';
+          get.textContent = 'Hent videoer (ca. ' + mb(left) + ' MB)';
+        }
+        return miss;
+      });
+    }
+
+    get.addEventListener('click', function () {
+      if (busy) return;
+      if (!navigator.onLine) { status.textContent = 'Du er ikke på internettet. Prøv igen, når du har forbindelse – helst wifi.'; return; }
+      busy = true;
+      get.disabled = true;
+      remove.disabled = true;
+      // Bed browseren om ikke at rydde de hentede videoer, når der mangler plads.
+      if (navigator.storage && navigator.storage.persist) navigator.storage.persist().catch(function () {});
+      var cache, miss, total = 0, loaded = 0;
+      refresh().then(function (m) {
+        miss = m;
+        total = miss.reduce(function (n, v) { return n + (v.s || 0); }, 0) || 1;
+        if (navigator.storage && navigator.storage.estimate) {
+          return navigator.storage.estimate().then(function (e) {
+            if (e && e.quota && e.quota - (e.usage || 0) < total * 1.1) throw new Error('plads');
+          }, function () {});
+        }
+      }).then(function () {
+        return caches.open(videoCache);
+      }).then(function (c) {
+        cache = c;
+        bar.hidden = false;
+        bar.value = 0;
+        var i = 0;
+        function next() {
+          if (i >= miss.length) return Promise.resolve();
+          var v = miss[i++];
+          status.textContent = 'Henter video ' + i + ' af ' + miss.length + ' …';
+          return fetch(v.u, { credentials: 'omit' }).then(function (res) {
+            if (!res.ok) throw new Error('http');
+            var type = res.headers.get('content-type') || 'video/mp4';
+            var done = function (blob) { return cache.put(v.u, new Response(blob, { headers: { 'Content-Type': type } })); };
+            if (!res.body || !res.body.getReader) {
+              return res.blob().then(function (b) { loaded += v.s || b.size; bar.value = Math.min(100, loaded / total * 100); return done(b); });
+            }
+            var reader = res.body.getReader();
+            var chunks = [];
+            function pump() {
+              return reader.read().then(function (r) {
+                if (r.done) return done(new Blob(chunks, { type: type }));
+                chunks.push(r.value);
+                loaded += r.value.length;
+                bar.value = Math.min(100, loaded / total * 100);
+                return pump();
+              });
+            }
+            return pump();
+          }).then(next);
+        }
+        return next();
+      }).then(function () {
+        return refresh();
+      }).catch(function (e) {
+        return refresh().then(function () {
+          status.textContent = e && e.message === 'plads'
+            ? 'Der er ikke plads nok på telefonen til videoerne. Frigør plads, og prøv igen.'
+            : 'Hentningen stoppede – måske mistede du forbindelsen, eller der er ikke plads nok. Prøv igen; videoer, der allerede er hentet, er gemt.';
+        });
+      }).then(function () {
+        busy = false;
+        get.disabled = false;
+        remove.disabled = false;
+        bar.hidden = true;
+      });
+    });
+
+    remove.addEventListener('click', function () {
+      if (busy) return;
+      caches.delete(videoCache).then(refresh).then(function () {
+        status.textContent = 'De hentede videoer er fjernet fra telefonen. De kan stadig ses med internet.';
+        get.focus();
+      });
+    });
+
+    refresh();
+  }
+
   initInstallPage();
   initSearch();
   initVideos();
+  initVideoDownload();
 })();

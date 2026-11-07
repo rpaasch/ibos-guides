@@ -232,7 +232,7 @@ function ibos_guides_editor_assets() {
 	if ( ! $screen || IBOS_GUIDES_CPT !== $screen->post_type ) {
 		return;
 	}
-	wp_enqueue_script( 'ibos-guides-editor', plugins_url( 'assets/editor.js', IBOS_GUIDES_FILE ), array( 'wp-hooks', 'wp-compose', 'wp-element', 'wp-components', 'wp-block-editor' ), IBOS_GUIDES_VERSION, false );
+	wp_enqueue_script( 'ibos-guides-editor', plugins_url( 'assets/editor.js', IBOS_GUIDES_FILE ), array( 'wp-hooks', 'wp-compose', 'wp-element', 'wp-components', 'wp-block-editor', 'wp-data', 'wp-core-data' ), IBOS_GUIDES_VERSION, false );
 }
 
 /* ---------------------------------------------------------------------------
@@ -277,4 +277,106 @@ function ibos_guides_has_video( $guide ) {
 		}
 	}
 	return false;
+}
+
+/* ---------------------------------------------------------------------------
+ * Video offline: hvilke videoer må borgeren hente til brug uden internet?
+ * ------------------------------------------------------------------------- */
+
+/**
+ * Må videoblokken hentes offline? Standard ja; redaktøren kan slå det fra pr. video.
+ *
+ * @param array $block Blok.
+ * @return bool
+ */
+function ibos_guides_video_offline_allowed( $block ) {
+	return ! ( isset( $block['attrs']['ibgOffline'] ) && false === $block['attrs']['ibgOffline'] );
+}
+
+/**
+ * Videoer på en side: kilde, størrelse, undertekster og plakatbillede.
+ *
+ * @param WP_Post $post Side.
+ * @return array[] array( 'src', 'offline', 'size', 'extras' => string[] )
+ */
+function ibos_guides_page_videos( $post ) {
+	if ( false === strpos( (string) $post->post_content, '<!-- wp:video' ) ) {
+		return array();
+	}
+	$home  = wp_parse_url( home_url(), PHP_URL_HOST );
+	$out   = array();
+	$walk  = function ( $blocks ) use ( &$walk, &$out, $home ) {
+		foreach ( $blocks as $b ) {
+			if ( 'core/video' === $b['blockName'] ) {
+				$p      = new WP_HTML_Tag_Processor( (string) $b['innerHTML'] );
+				$src    = '';
+				$extras = array();
+				while ( $p->next_tag() ) {
+					$tag = $p->get_tag();
+					if ( 'VIDEO' === $tag ) {
+						$src    = (string) $p->get_attribute( 'src' );
+						$poster = $p->get_attribute( 'poster' );
+						if ( is_string( $poster ) && '' !== $poster ) {
+							$extras[] = $poster;
+						}
+					} elseif ( 'TRACK' === $tag && is_string( $p->get_attribute( 'src' ) ) ) {
+						$extras[] = $p->get_attribute( 'src' );
+					}
+				}
+				// Kun filer fra sitet selv (Medier) kan gemmes offline.
+				if ( '' !== $src && wp_parse_url( $src, PHP_URL_HOST ) === $home ) {
+					$id   = ! empty( $b['attrs']['id'] ) ? (int) $b['attrs']['id'] : attachment_url_to_postid( $src );
+					$file = $id ? get_attached_file( $id ) : '';
+					$out[] = array(
+						'src'     => $src,
+						'offline' => ibos_guides_video_offline_allowed( $b ),
+						'size'    => ( $file && is_readable( $file ) ) ? (int) filesize( $file ) : 0,
+						'extras'  => array_values(
+							array_filter(
+								$extras,
+								function ( $u ) use ( $home ) {
+									return wp_parse_url( $u, PHP_URL_HOST ) === $home;
+								}
+							)
+						),
+					);
+				}
+			}
+			if ( ! empty( $b['innerBlocks'] ) ) {
+				$walk( $b['innerBlocks'] );
+			}
+		}
+	};
+	$walk( parse_blocks( $post->post_content ) );
+	return $out;
+}
+
+/**
+ * Markér videoer, der kan hentes offline, så appen kan sige det til borgeren.
+ *
+ * @param string $html  Blokkens HTML.
+ * @param array  $block Blokken.
+ * @return string
+ */
+function ibos_guides_mark_offline_video( $html, $block ) {
+	if ( 'core/video' !== $block['blockName'] || '' === $html || ! ibos_guides_video_offline_allowed( $block ) ) {
+		return $html;
+	}
+	$p = new WP_HTML_Tag_Processor( $html );
+	if ( $p->next_tag( 'figure' ) ) {
+		$p->set_attribute( 'data-offline', '1' );
+		return $p->get_updated_html();
+	}
+	return $html;
+}
+
+/**
+ * Megabyte, afrundet til et pænt tal.
+ *
+ * @param int $bytes Bytes.
+ * @return string
+ */
+function ibos_guides_mb( $bytes ) {
+	$mb = $bytes / 1048576;
+	return number_format_i18n( $mb < 10 ? max( 0.1, round( $mb, 1 ) ) : round( $mb ), $mb < 10 ? 1 : 0 );
 }

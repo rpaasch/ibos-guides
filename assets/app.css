@@ -83,6 +83,11 @@ img, svg, picture, video { max-width: 100%; height: auto; }
 .wp-block-video figcaption { margin-top: .4em; }
 .video-offline { margin: 0; padding: .9em 1em; border: 2px solid currentColor; border-radius: var(--radius); font-weight: 600; }
 .wp-block-video.is-offline video { display: none; }
+.video-offline a { font-weight: 700; }
+.videos-offline { margin: 2rem 0; padding: 1rem 1.25rem; border: 1px solid var(--border); border-radius: var(--radius); background: var(--surface); }
+.videos-offline h2 { margin-top: 0; }
+.videos-offline progress { width: 100%; height: 1rem; margin: .25rem 0 .75rem; }
+.videos-actions { display: flex; flex-wrap: wrap; gap: .75rem; }
 picture, .image { display: block; }
 .image, figure { margin: 1.25rem 0; }
 figure img, .image img { display: block; border-radius: var(--radius); background: var(--surface); }
